@@ -139,10 +139,10 @@
   .mini-podium .col { text-align: center; flex: 1; max-width: 110px; }
   .mini-podium .name { font-weight: 700; font-size: .85rem; margin-bottom: 3px; word-break: break-word; }
   .mini-podium .score { color: var(--muted); font-size: .8rem; margin-bottom: 4px; }
-  .mini-podium .bar { border-radius: 9px 9px 0 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 4px; font-size: 1.15rem; }
-  .mini-podium .p1 .bar { height: 62px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
-  .mini-podium .p2 .bar { height: 44px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
-  .mini-podium .p3 .bar { height: 32px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  .mini-podium .bar { border-radius: 9px 9px 0 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 6px; font-size: 2.1rem; }
+  .mini-podium .p1 .bar { height: 82px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
+  .mini-podium .p2 .bar { height: 62px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
+  .mini-podium .p3 .bar { height: 46px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
   .you-line { text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08); font-size: 1rem; }
   .you-line b { color: var(--accent); }
 
@@ -155,10 +155,10 @@
   .podium .col { text-align: center; flex: 1; max-width: 130px; }
   .podium .name { font-weight: 700; margin-bottom: 6px; font-size: .95rem; word-break: break-word; }
   .podium .score { color: var(--muted); font-size: .85rem; margin-bottom: 6px; }
-  .podium .bar { border-radius: 12px 12px 0 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 8px; font-size: 1.6rem; }
-  .podium .p1 .bar { height: 120px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
-  .podium .p2 .bar { height: 88px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
-  .podium .p3 .bar { height: 64px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  .podium .bar { border-radius: 12px 12px 0 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 10px; font-size: 3rem; }
+  .podium .p1 .bar { height: 135px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
+  .podium .p2 .bar { height: 102px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
+  .podium .p3 .bar { height: 78px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
   .podium .col.avg .bar { background: linear-gradient(180deg, #9b8cff, #5b4bd6); }
   .podium .col.avg .name { color: var(--accent2); font-style: italic; }
   .confetti-title { text-align: center; font-size: 1.7rem; font-weight: 800; margin-top: 18px; }
@@ -205,13 +205,13 @@
     <button id="btn-show-create">🚀 Create a new game</button>
   </div>
   <div class="card">
-    <div class="section-title">Have a code? Join a game</div>
+    <div class="section-title">Have a code? Type it to join</div>
     <div class="code-entry" id="code-entry">
       <div class="sq" id="sq0"></div><div class="sq" id="sq1"></div><div class="sq" id="sq2"></div><div class="sq" id="sq3"></div>
       <input type="text" id="join-code" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
     </div>
-    <button class="secondary" id="btn-show-join" style="margin-top:12px">Join →</button>
   </div>
+  <button class="ghost" id="btn-change-name">✏️ change name</button>
   <div class="error" id="home-error"></div>
   <div class="spacer"></div>
   <div class="footer-note">Grab friends, share a code, and find out if the crowd is smarter than the smartest player.</div>
@@ -219,15 +219,15 @@
 
 <!-- NICKNAME -->
 <div class="screen" id="screen-nick">
-  <div class="logo">Pick a nickname</div>
-  <div class="tagline">This is how the world will know you. Choose wisely.</div>
+  <div class="logo">What's your name?</div>
+  <div class="tagline">Other players will see this. We'll remember it on this device.</div>
   <div class="card">
     <input type="text" id="nick-input" maxlength="24" autocomplete="off">
-    <button class="ghost" id="btn-shuffle-nick" style="margin-top:8px">🎲 Suggest another funny one</button>
-    <button id="btn-nick-go" style="margin-top:8px">Let's go!</button>
+    <button class="ghost" id="btn-shuffle-nick" style="margin-top:8px">🎲 Suggest a fun one</button>
+    <button id="btn-nick-go" style="margin-top:8px">That's me!</button>
     <div class="error" id="nick-error"></div>
   </div>
-  <button class="ghost" id="btn-nick-back">← Back</button>
+  <button class="ghost" id="btn-nick-back" style="display:none">← Back</button>
 </div>
 
 <!-- LOBBY -->
@@ -334,8 +334,8 @@
 
   // ---------- state ----------
   let me = { playerId: null, isHost: false, code: null, nick: '' };
-  let pendingAction = null; // 'create' | 'join'
-  let pendingCode = null;
+  const savedName = () => localStorage.getItem('ballpark_name') || '';
+  const setSavedName = (n) => localStorage.setItem('ballpark_name', n);
   let currentGuess = '';
   let currentUnit = '';
   let timerInterval = null;
@@ -363,22 +363,24 @@
   document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
   document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
 
-  // ---------- home ----------
+  // ---------- home & name flow ----------
+  // The name is asked once and remembered on this device (localStorage).
+  function showHome() {
+    const n = savedName();
+    $('btn-change-name').textContent = `✏️ Playing as ${n} — tap to change`;
+    $('me-chip-name').textContent = n;
+    $('me-chip').style.display = 'block';
+    show('screen-home');
+  }
+
   $('btn-show-create').onclick = () => {
-    pendingAction = 'create';
-    $('nick-input').value = funnyNick();
-    show('screen-nick');
+    socket.emit('create_game', { nick: savedName() }, (res) => {
+      if (!res.ok) { $('home-error').textContent = res.error || 'Something went wrong.'; return; }
+      onEnteredLobby(res, savedName());
+    });
   };
-  $('btn-show-join').onclick = () => {
-    const code = $('join-code').value.trim().toUpperCase();
-    if (code.length !== 4) { $('home-error').textContent = 'Enter the 4-letter game code.'; return; }
-    $('home-error').textContent = '';
-    pendingAction = 'join';
-    pendingCode = code;
-    $('nick-input').value = funnyNick();
-    show('screen-nick');
-  };
-  // 4-square code entry (hidden input overlays the squares)
+
+  // 4-square code entry (hidden input overlays the squares) — joins on 4th letter
   const joinInput = $('join-code');
   function renderCodeSquares() {
     const v = joinInput.value;
@@ -389,39 +391,64 @@
       sq.classList.toggle('cursor', i === v.length && document.activeElement === joinInput);
     }
   }
+  let joining = false;
+  function tryJoin() {
+    const code = joinInput.value;
+    if (code.length !== 4 || joining) return;
+    joining = true;
+    socket.emit('join_game', { code, nick: savedName() }, (res) => {
+      joining = false;
+      if (!res.ok) {
+        $('home-error').textContent = res.error || 'Could not join.';
+        joinInput.focus();
+        joinInput.select();
+        return;
+      }
+      $('home-error').textContent = '';
+      onEnteredLobby(res, savedName());
+    });
+  }
   joinInput.addEventListener('input', () => {
     joinInput.value = joinInput.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
     renderCodeSquares();
+    if (joinInput.value.length === 4) tryJoin();
   });
   joinInput.addEventListener('focus', renderCodeSquares);
   joinInput.addEventListener('blur', renderCodeSquares);
-  joinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-show-join').click(); });
+  joinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryJoin(); });
 
   // support ?join=CODE links
   const urlCode = new URLSearchParams(location.search).get('join');
-  if (urlCode) { joinInput.value = urlCode.toUpperCase().slice(0, 4); renderCodeSquares(); }
+  if (urlCode) { joinInput.value = urlCode.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); renderCodeSquares(); }
 
-  // ---------- nickname ----------
+  // ---------- name screen ----------
   $('btn-shuffle-nick').onclick = () => { $('nick-input').value = funnyNick(); };
   $('nick-input').addEventListener('focus', function () { this.select(); }); // typing replaces suggestion
   $('nick-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-nick-go').click(); });
-  $('btn-nick-back').onclick = () => show('screen-home');
+  $('btn-nick-back').onclick = () => showHome();
+  $('btn-change-name').onclick = () => {
+    $('nick-input').value = savedName();
+    $('btn-nick-back').style.display = '';
+    show('screen-nick');
+  };
   $('btn-nick-go').onclick = () => {
     const nick = $('nick-input').value.trim();
     if (!nick) { $('nick-error').textContent = 'You need a name, mysterious stranger.'; return; }
     $('nick-error').textContent = '';
-    if (pendingAction === 'create') {
-      socket.emit('create_game', { nick }, (res) => {
-        if (!res.ok) { $('nick-error').textContent = res.error || 'Something went wrong.'; return; }
-        onEnteredLobby(res, nick);
-      });
-    } else {
-      socket.emit('join_game', { code: pendingCode, nick }, (res) => {
-        if (!res.ok) { $('nick-error').textContent = res.error || 'Could not join.'; return; }
-        onEnteredLobby(res, nick);
-      });
-    }
+    setSavedName(nick);
+    showHome();
+    // arrived via an invite link? join immediately now that we have a name
+    if (joinInput.value.length === 4) tryJoin();
   };
+
+  // First visit: ask for the name. Returning visitor: straight to home.
+  if (savedName()) {
+    showHome();
+    if (urlCode && joinInput.value.length === 4) tryJoin(); // invite link + known name = instant join
+  } else {
+    $('nick-input').value = funnyNick();
+    show('screen-nick');
+  }
 
   function onEnteredLobby(res, nick) {
     me = { playerId: res.playerId, isHost: res.isHost, code: res.code, nick };
@@ -561,7 +588,7 @@
     else if (e.key === '.') { if (!currentGuess.includes('.')) { currentGuess = (currentGuess || '0') + '.'; renderGuess(); } }
     else if (e.key === '-') { currentGuess = currentGuess.startsWith('-') ? currentGuess.slice(1) : '-' + currentGuess; renderGuess(); }
     else if (e.key === 'Backspace') { currentGuess = currentGuess.slice(0, -1); renderGuess(); }
-    else if (e.key === 'Enter') submitGuess();
+    else if (e.key === 'Enter') { e.preventDefault(); submitGuess(); } // Enter = the yellow button
   });
 
   function submitGuess() {
