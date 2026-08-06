@@ -65,6 +65,8 @@
   }
   .code-entry .sq.filled { border-color: var(--accent2); }
   .code-entry .sq.cursor { border-color: var(--accent); }
+  @keyframes sq-pulse { 50% { opacity: .45; } }
+  .code-entry.joining .sq { animation: sq-pulse 1s infinite; border-color: var(--accent); }
   .code-entry input {
     position: absolute; inset: 0; width: 100%; height: 100%;
     opacity: 0; border: none; font-size: 16px; /* 16px stops iOS auto-zoom on focus */
@@ -210,6 +212,7 @@
       <div class="sq" id="sq0"></div><div class="sq" id="sq1"></div><div class="sq" id="sq2"></div><div class="sq" id="sq3"></div>
       <input type="text" id="join-code" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
     </div>
+    <div class="hint" id="join-status" style="display:none">⏳ Joining…</div>
   </div>
   <button class="ghost" id="btn-change-name">✏️ change name</button>
   <div class="error" id="home-error"></div>
@@ -322,7 +325,8 @@
 <script src="/socket.io/socket.io.js"></script>
 <script>
 (() => {
-  const socket = io();
+  // websocket-only: skips the slow HTTP long-polling handshake on poor connections
+  const socket = io({ transports: ['websocket'] });
 
   // ---------- nickname suggestions: short & sweet ----------
   const NICKS = ['Waffles','Pickles','Noodle','Turbo','Biscuit','Muffin','Nugget','Disco','Taco','Mango',
@@ -374,7 +378,13 @@
   }
 
   $('btn-show-create').onclick = () => {
+    const b = $('btn-show-create');
+    if (b.disabled) return;
+    b.disabled = true;
+    b.textContent = '⏳ Creating your game…';
     socket.emit('create_game', { nick: savedName() }, (res) => {
+      b.disabled = false;
+      b.textContent = '🚀 Create a new game';
       if (!res.ok) { $('home-error').textContent = res.error || 'Something went wrong.'; return; }
       onEnteredLobby(res, savedName());
     });
@@ -396,8 +406,14 @@
     const code = joinInput.value;
     if (code.length !== 4 || joining) return;
     joining = true;
+    // Instant feedback: squares pulse while the server is contacted
+    $('code-entry').classList.add('joining');
+    $('home-error').textContent = '';
+    $('join-status').style.display = '';
     socket.emit('join_game', { code, nick: savedName() }, (res) => {
       joining = false;
+      $('code-entry').classList.remove('joining');
+      $('join-status').style.display = 'none';
       if (!res.ok) {
         $('home-error').textContent = res.error || 'Could not join.';
         joinInput.focus();
@@ -479,6 +495,8 @@
       ul.appendChild(li);
     });
     $('btn-start').style.display = me.isHost ? '' : 'none';
+    $('btn-start').disabled = false;
+    $('btn-start').textContent = '▶️ Start game (10 rounds)';
     $('waiting-host-note').style.display = me.isHost ? 'none' : '';
   }
 
@@ -502,8 +520,17 @@
   };
 
   $('btn-start').onclick = () => {
+    const b = $('btn-start');
+    if (b.disabled) return;
+    b.disabled = true;
+    b.textContent = '⏳ Starting…';
     socket.emit('start_game', {}, (res) => {
-      if (!res.ok) $('lobby-error').textContent = res.error || '';
+      if (!res.ok) {
+        b.disabled = false;
+        b.textContent = '▶️ Start game (10 rounds)';
+        $('lobby-error').textContent = res.error || '';
+      }
+      // on success round_start switches the screen; button resets in renderLobby
     });
   };
 
@@ -595,13 +622,13 @@
     if (!currentGuess || answeredThisRound) return;
     const value = Number(currentGuess);
     if (!isFinite(value)) return;
+    // Optimistic: lock the UI instantly, reconcile with the server in the background
+    answeredThisRound = true;
+    setKeypadEnabled(false);
+    $('answered-note').textContent = `Locked in: ${fmt(value, currentUnit)} ✔`;
     socket.emit('submit_answer', { value }, (res) => {
-      if (res.ok) {
-        answeredThisRound = true;
-        setKeypadEnabled(false);
-        $('answered-note').textContent = `Locked in: ${fmt(value, currentUnit)} ✔`;
-      } else {
-        $('answered-note').textContent = res.error || '';
+      if (!res || !res.ok) {
+        $('answered-note').textContent = (res && res.error) || 'Could not submit.';
       }
     });
   }
@@ -682,6 +709,8 @@
 
     // Next-round countdown bar (host can skip ahead with the button)
     clearInterval(advanceInterval);
+    $('btn-next').disabled = false;
+    $('btn-next').textContent = 'Next round →';
     if (!data.isFinal && data.resultsEndsAt) {
       $('btn-next').style.display = me.isHost ? '' : 'none';
       $('advance-wrap').style.display = '';
@@ -701,7 +730,14 @@
     show('screen-results');
   });
 
-  $('btn-next').onclick = () => socket.emit('next_round', {}, () => {});
+  $('btn-next').onclick = () => {
+    const b = $('btn-next');
+    if (b.disabled) return;
+    b.disabled = true;
+    b.textContent = '⏳ Loading next round…';
+    socket.emit('next_round', {}, () => {});
+    // round_start switches the screen; button resets on next results render
+  };
 
   // ---------- final ----------
   socket.on('game_over', (data) => {
@@ -766,11 +802,20 @@
       recap.appendChild(div);
     });
     $('btn-play-again').style.display = me.isHost ? '' : 'none';
+    $('btn-play-again').disabled = false;
+    $('btn-play-again').textContent = '🔁 Play again (same crew)';
     $('final-waiting').style.display = me.isHost ? 'none' : '';
     show('screen-final');
   }
 
-  $('btn-play-again').onclick = () => socket.emit('play_again', {}, () => {});
+  $('btn-play-again').onclick = () => {
+    const b = $('btn-play-again');
+    if (b.disabled) return;
+    b.disabled = true;
+    b.textContent = '⏳ Setting up…';
+    socket.emit('play_again', {}, () => {});
+    // new_game_lobby switches the screen; button resets on next final render
+  };
   $('btn-leave').onclick = () => location.href = location.pathname;
 
   socket.on('new_game_lobby', (lobby) => {
