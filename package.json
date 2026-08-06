@@ -1,0 +1,19 @@
+{
+  "name": "ballpark",
+  "version": "1.0.0",
+  "description": "Multiplayer numeric guessing game — 10 rounds, closest guess wins",
+  "main": "server.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/simulate.js && node test/timeout-test.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

@@ -1,0 +1,378 @@
+// Ballpark — multiplayer numeric guessing game
+// Node.js + Express + Socket.IO
+
+const path = require('path');
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const { pickQuestions } = require('./questions');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+const PORT = process.env.PORT || 3000;
+const ROUNDS_PER_GAME = 10;
+const ROUND_SECONDS = 20;
+const RESULTS_AUTO_ADVANCE_SECONDS = 20; // auto-advance if host doesn't click
+const RANK_POINTS = [10, 7, 5, 3]; // 1st..4th, everyone after gets 1, no answer 0
+
+/** games: code -> game */
+const games = new Map();
+
+function makeCode() {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O to avoid confusion
+  let code;
+  do {
+    code = Array.from({ length: 4 }, () => letters[Math.floor(Math.random() * letters.length)]).join('');
+  } while (games.has(code));
+  return code;
+}
+
+function createGame() {
+  const code = makeCode();
+  const game = {
+    code,
+    hostId: null,
+    players: new Map(), // playerId -> {id, nick, score, connected, socketId}
+    state: 'lobby', // lobby | question | results | final
+    round: 0,
+    questions: [],
+    usedQuestionTexts: new Set(),
+    answers: new Map(), // playerId -> number
+    roundHistory: [], // per-round recap: question, answer, avg, median
+    roundEndsAt: null,
+    roundTimer: null,
+    advanceTimer: null,
+    lastRoundResults: null,
+    createdAt: Date.now(),
+  };
+  games.set(code, game);
+  return game;
+}
+
+function publicPlayers(game) {
+  return [...game.players.values()].map((p) => ({
+    id: p.id,
+    nick: p.nick,
+    score: p.score,
+    connected: p.connected,
+    isHost: p.id === game.hostId,
+  }));
+}
+
+function standings(game) {
+  return [...game.players.values()]
+    .map((p) => ({ nick: p.nick, score: p.score, connected: p.connected }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function lobbyState(game) {
+  return { code: game.code, players: publicPlayers(game), state: game.state };
+}
+
+function emitLobby(game) {
+  io.to(game.code).emit('lobby_update', lobbyState(game));
+}
+
+function median(nums) {
+  if (!nums.length) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function startRound(game) {
+  clearTimeout(game.advanceTimer);
+  game.round++;
+  game.state = 'question';
+  game.answers = new Map();
+  const q = game.questions[game.round - 1];
+  game.roundEndsAt = Date.now() + ROUND_SECONDS * 1000;
+
+  io.to(game.code).emit('round_start', {
+    round: game.round,
+    totalRounds: ROUNDS_PER_GAME,
+    category: q.cat,
+    question: q.q,
+    unit: q.unit,
+    seconds: ROUND_SECONDS,
+    endsAt: game.roundEndsAt,
+  });
+
+  clearTimeout(game.roundTimer);
+  game.roundTimer = setTimeout(() => endRound(game), ROUND_SECONDS * 1000 + 300);
+}
+
+function maybeEndEarly(game) {
+  const connectedIds = [...game.players.values()].filter((p) => p.connected).map((p) => p.id);
+  if (connectedIds.length && connectedIds.every((id) => game.answers.has(id))) {
+    endRound(game);
+  }
+}
+
+function endRound(game) {
+  if (game.state !== 'question') return;
+  clearTimeout(game.roundTimer);
+  game.state = 'results';
+
+  const q = game.questions[game.round - 1];
+  const answer = q.a;
+
+  // Build result rows
+  const rows = [...game.players.values()].map((p) => {
+    const guess = game.answers.has(p.id) ? game.answers.get(p.id) : null;
+    return {
+      playerId: p.id,
+      nick: p.nick,
+      guess,
+      delta: guess === null ? null : Math.abs(guess - answer),
+    };
+  });
+
+  // Rank those who answered, by distance (ties share the better rank & points)
+  const answered = rows.filter((r) => r.guess !== null).sort((a, b) => a.delta - b.delta);
+  let rank = 0;
+  let prevDelta = null;
+  answered.forEach((r, i) => {
+    if (prevDelta === null || r.delta > prevDelta) rank = i + 1;
+    prevDelta = r.delta;
+    r.rank = rank;
+    r.points = rank <= RANK_POINTS.length ? RANK_POINTS[rank - 1] : 1;
+  });
+  rows.forEach((r) => {
+    if (r.guess === null) {
+      r.rank = null;
+      r.points = 0;
+    }
+  });
+
+  // Apply points
+  for (const r of rows) {
+    const p = game.players.get(r.playerId);
+    if (p) p.score += r.points;
+  }
+
+  // Crowd wisdom
+  const guesses = answered.map((r) => r.guess);
+  const avg = guesses.length ? guesses.reduce((s, g) => s + g, 0) / guesses.length : null;
+  const med = median(guesses);
+  let crowdNote = null;
+  if (guesses.length >= 2) {
+    const bestDelta = answered[0].delta;
+    const avgDelta = Math.abs(avg - answer);
+    const medDelta = Math.abs(med - answer);
+    const crowdBest = Math.min(avgDelta, medDelta);
+    const beaten = answered.filter((r) => r.delta > crowdBest).length;
+    if (crowdBest < bestDelta) {
+      crowdNote = `🧠 The crowd wins! The ${avgDelta <= medDelta ? 'average' : 'median'} beat every single player.`;
+    } else if (beaten > 0) {
+      crowdNote = `🧠 The crowd beat ${beaten} of ${answered.length} players — but not ${answered[0].nick}.`;
+    } else {
+      crowdNote = `🤷 The crowd was no smarter than any player this round.`;
+    }
+  }
+
+  const sortedRows = rows.slice().sort((a, b) => {
+    if (a.rank === null) return 1;
+    if (b.rank === null) return -1;
+    return a.rank - b.rank;
+  });
+
+  const isFinal = game.round >= ROUNDS_PER_GAME;
+
+  game.roundHistory.push({
+    round: game.round,
+    category: q.cat,
+    question: q.q,
+    unit: q.unit,
+    answer,
+    average: avg,
+    median: med,
+  });
+
+  game.lastRoundResults = {
+    round: game.round,
+    totalRounds: ROUNDS_PER_GAME,
+    category: q.cat,
+    question: q.q,
+    unit: q.unit,
+    answer,
+    results: sortedRows,
+    average: avg,
+    median: med,
+    crowdNote,
+    standings: standings(game),
+    isFinal,
+    autoAdvanceSeconds: isFinal ? null : RESULTS_AUTO_ADVANCE_SECONDS,
+  };
+
+  io.to(game.code).emit('round_results', game.lastRoundResults);
+
+  if (isFinal) {
+    game.state = 'final';
+    io.to(game.code).emit('game_over', {
+      standings: standings(game),
+      history: game.roundHistory,
+      code: game.code,
+    });
+  } else {
+    // Auto-advance in case the host walks away
+    clearTimeout(game.advanceTimer);
+    game.advanceTimer = setTimeout(() => {
+      if (game.state === 'results') startRound(game);
+    }, RESULTS_AUTO_ADVANCE_SECONDS * 1000);
+  }
+}
+
+function resetForNewGame(game) {
+  game.questions.forEach((q) => game.usedQuestionTexts.add(q.q));
+  game.state = 'lobby';
+  game.round = 0;
+  game.answers = new Map();
+  game.roundHistory = [];
+  game.lastRoundResults = null;
+  clearTimeout(game.roundTimer);
+  clearTimeout(game.advanceTimer);
+  for (const p of game.players.values()) p.score = 0;
+}
+
+function sanitizeNick(nick) {
+  return String(nick || '').trim().slice(0, 24) || 'Anonymous Ant';
+}
+
+io.on('connection', (socket) => {
+  let myGame = null;
+  let myPlayerId = null;
+
+  socket.on('create_game', ({ nick }, cb) => {
+    const game = createGame();
+    const playerId = socket.id;
+    const player = { id: playerId, nick: sanitizeNick(nick), score: 0, connected: true, socketId: socket.id };
+    game.players.set(playerId, player);
+    game.hostId = playerId;
+    myGame = game;
+    myPlayerId = playerId;
+    socket.join(game.code);
+    cb && cb({ ok: true, code: game.code, playerId, isHost: true, lobby: lobbyState(game) });
+    emitLobby(game);
+  });
+
+  socket.on('join_game', ({ code, nick }, cb) => {
+    const game = games.get(String(code || '').trim().toUpperCase());
+    if (!game) return cb && cb({ ok: false, error: 'Game not found. Check the code!' });
+    if (game.state !== 'lobby') return cb && cb({ ok: false, error: 'This game already started. Ask for a new one!' });
+    if (game.players.size >= 12) return cb && cb({ ok: false, error: 'Game is full (12 players max).' });
+    const cleanNick = sanitizeNick(nick);
+    if ([...game.players.values()].some((p) => p.nick.toLowerCase() === cleanNick.toLowerCase())) {
+      return cb && cb({ ok: false, error: 'That nickname is taken in this game. Pick another!' });
+    }
+    const playerId = socket.id;
+    game.players.set(playerId, { id: playerId, nick: cleanNick, score: 0, connected: true, socketId: socket.id });
+    myGame = game;
+    myPlayerId = playerId;
+    socket.join(game.code);
+    cb && cb({ ok: true, code: game.code, playerId, isHost: false, lobby: lobbyState(game) });
+    emitLobby(game);
+  });
+
+  socket.on('start_game', (_, cb) => {
+    const game = myGame;
+    if (!game || myPlayerId !== game.hostId) return cb && cb({ ok: false, error: 'Only the host can start.' });
+    if (game.state !== 'lobby') return cb && cb({ ok: false, error: 'Game already started.' });
+    if (game.players.size < 1) return cb && cb({ ok: false, error: 'Need at least 1 player.' });
+    game.questions = pickQuestions(ROUNDS_PER_GAME, game.usedQuestionTexts);
+    cb && cb({ ok: true });
+    io.to(game.code).emit('game_started', {});
+    startRound(game);
+  });
+
+  socket.on('submit_answer', ({ value }, cb) => {
+    const game = myGame;
+    if (!game || game.state !== 'question') return cb && cb({ ok: false, error: 'No active question.' });
+    if (Date.now() > game.roundEndsAt + 500) return cb && cb({ ok: false, error: 'Too late!' });
+    const num = Number(value);
+    if (!isFinite(num)) return cb && cb({ ok: false, error: 'That is not a number.' });
+    game.answers.set(myPlayerId, num);
+    cb && cb({ ok: true });
+    io.to(game.code).emit('answer_count', {
+      answered: game.answers.size,
+      total: [...game.players.values()].filter((p) => p.connected).length,
+    });
+    maybeEndEarly(game);
+  });
+
+  socket.on('next_round', (_, cb) => {
+    const game = myGame;
+    if (!game || myPlayerId !== game.hostId) return cb && cb({ ok: false, error: 'Only the host can advance.' });
+    if (game.state !== 'results') return cb && cb({ ok: false });
+    cb && cb({ ok: true });
+    startRound(game);
+  });
+
+  socket.on('play_again', (_, cb) => {
+    const game = myGame;
+    if (!game || myPlayerId !== game.hostId) return cb && cb({ ok: false, error: 'Only the host can restart.' });
+    if (game.state !== 'final') return cb && cb({ ok: false });
+    resetForNewGame(game);
+    cb && cb({ ok: true });
+    io.to(game.code).emit('new_game_lobby', lobbyState(game));
+    emitLobby(game);
+  });
+
+  socket.on('disconnect', () => {
+    const game = myGame;
+    if (!game) return;
+    const p = game.players.get(myPlayerId);
+    if (!p) return;
+    if (game.state === 'lobby') {
+      game.players.delete(myPlayerId);
+      // Host left in lobby: pass host to next player or delete empty game
+      if (game.hostId === myPlayerId) {
+        const next = game.players.values().next().value;
+        if (next) game.hostId = next.id;
+        else {
+          clearTimeout(game.roundTimer);
+          clearTimeout(game.advanceTimer);
+          games.delete(game.code);
+          return;
+        }
+      }
+    } else {
+      p.connected = false;
+      // Pass host if host dropped mid-game
+      if (game.hostId === myPlayerId) {
+        const next = [...game.players.values()].find((x) => x.connected);
+        if (next) game.hostId = next.id;
+      }
+      // If everyone is gone, clean up after 10 minutes
+      if (![...game.players.values()].some((x) => x.connected)) {
+        setTimeout(() => {
+          if (![...games.has(game.code) ? game.players.values() : []].some((x) => x.connected)) {
+            clearTimeout(game.roundTimer);
+            clearTimeout(game.advanceTimer);
+            games.delete(game.code);
+          }
+        }, 10 * 60 * 1000);
+      }
+      if (game.state === 'question') maybeEndEarly(game);
+    }
+    emitLobby(game);
+  });
+});
+
+// Clean up abandoned lobbies every 30 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, game] of games) {
+    if (game.state === 'lobby' && now - game.createdAt > 2 * 60 * 60 * 1000 && game.players.size === 0) {
+      games.delete(code);
+    }
+  }
+}, 30 * 60 * 1000);
+
+server.listen(PORT, () => {
+  console.log(`Ballpark server running on http://localhost:${PORT}`);
+});
