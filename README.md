@@ -53,7 +53,7 @@ host works. It respects the `PORT` environment variable.
 
 ```
 server.js          # game logic: rooms, rounds, timers, scoring, crowd stats
-questions.js       # question bank (~110 questions, 9 categories) + picker
+questions.js       # question bank (1,000+ questions, 10 categories) + picker
 public/index.html  # entire client (single file: lobby, keypad, results, podium)
 test/simulate.js   # 3-player full-game simulation (2 games incl. play-again)
 test/timeout-test.js  # timer-expiry edge case
@@ -69,5 +69,11 @@ const ROUND_SECONDS = 20;
 const RANK_POINTS = [10, 7, 5, 3]; // 5th+ get 1 point, no answer 0
 ```
 
-Add questions in `questions.js` — either `{ cat, q, a, unit }` or, for ages that
-stay current forever, `{ cat, q, birth: 'YYYY-MM-DD', unit: 'years' }`.
+Add questions in `questions.js` — either `{ cat, q, a, unit }` in `STATIC` or, for
+ages that stay current forever, an entry in `AGES`. Much of the bank is generated
+from data tables (countries, US states, cities, city-pair distances via haversine,
+birthdates, net worths), so adding one row often adds several questions.
+
+Each game randomly draws 10 questions spread across categories, and a group that
+plays consecutive games never sees a repeated question until the full bank
+(1,000+) is exhausted.

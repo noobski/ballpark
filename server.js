@@ -22,8 +22,29 @@ const RANK_POINTS = [10, 7, 5, 3]; // 1st..4th, everyone after gets 1, no answer
 /** games: code -> game */
 const games = new Map();
 
+// Real 4-letter words make codes easy to say out loud and remember
+const CODE_WORDS = ('ABLE ACES AQUA ARCH ATOM BAKE BAND BARK BARN BEAM BEAN BEAR BEAT BELL BELT BEND BEST BIKE BIRD BITE ' +
+  'BLUE BOAT BOLD BOLT BONE BOOK BOOM BOOT BOSS BOWL BUZZ CAFE CAKE CALM CAMP CARD CARE CART CASH CAST ' +
+  'CAVE CHAT CHEF CHIN CHIP CITY CLAM CLAP CLAY CLIP CLUB CLUE COAL COAT CODE COIN COLD COMB COOK COOL ' +
+  'CORD CORK CORN COZY CRAB CREW CROP CUBE CURL DART DASH DAWN DEAL DECK DEEP DEER DESK DIAL DICE DISH ' +
+  'DIVE DOCK DOME DOOR DOVE DRUM DUCK DUNE DUST EARN EAST ECHO EDGE EPIC EXIT FACE FACT FAIR FARM FAST ' +
+  'FERN FILM FIRE FISH FIVE FLAG FLIP FLOW FOAM FOLK FOOD FORK FORT FOUR FROG FUEL GAME GATE GEAR GIFT ' +
+  'GLOW GOAL GOLD GOLF GONG GOOD GRIN GULF HAWK HERO HIKE HILL HINT HIVE HOME HOOD HOOK HOPE HORN HOST ' +
+  'HOUR HUSH ICON IRIS IRON JADE JAZZ JEEP JOKE JOLT JUMP JUNE KALE KEEN KELP KILO KIND KING KITE KIWI ' +
+  'KNEE KNOT LAKE LAMB LAMP LAND LARK LAVA LEAF LEAP LIME LION LOAF LOCK LOFT LOGO LOOP LUCK LUSH MAKE ' +
+  'MAPS MASK MAST MATE MAZE MELT MENU MESA MILD MILE MILK MINT MOON MOSS MOTH MOVE NAVY NEAT NEON NEST ' +
+  'NICE NINE NOTE NOVA OATS OBOE OKAY OPAL OPEN OVAL OVEN PAGE PALM PARK PATH PEAK PEAR PINE PING PLAY ' +
+  'PLUM POEM POET POLO POND PONY POOL PORT PUMA PURE QUIZ RACE RAFT RAIN RAMP RARE RAVE REEF RICE RIDE ' +
+  'RING RIPE RISE ROAD ROAR ROCK ROOF ROOM ROOT ROPE ROSE RUBY RUSH SAGE SAIL SALT SAND SEAL SEED SHIP ' +
+  'SHOE SILK SING SITE SNOW SOAP SOCK SODA SOFA SOLO SONG SPIN STAR STEM SURF SWAN SWIM TACO TALE TASK ' +
+  'TEAM TIDE TIME TOAD TOFU TOTE TOUR TRAM TREE TRIO TUNA TUNE TWIN VASE VIBE VINE VOTE WAVE WEST WILD ' +
+  'WIND WING WINK WISE WISH WOLF WOOD WOOL YARD YARN YOGA ZERO ZEST ZINC ZOOM').split(' ');
+
 function makeCode() {
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I/O to avoid confusion
+  const free = CODE_WORDS.filter((w) => !games.has(w));
+  if (free.length) return free[Math.floor(Math.random() * free.length)];
+  // fallback if (somehow) all words are in use
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   let code;
   do {
     code = Array.from({ length: 4 }, () => letters[Math.floor(Math.random() * letters.length)]).join('');
@@ -65,7 +86,7 @@ function publicPlayers(game) {
 
 function standings(game) {
   return [...game.players.values()]
-    .map((p) => ({ nick: p.nick, score: p.score, connected: p.connected }))
+    .map((p) => ({ id: p.id, nick: p.nick, score: p.score, connected: p.connected }))
     .sort((a, b) => b.score - a.score);
 }
 
@@ -103,7 +124,8 @@ function startRound(game) {
   });
 
   clearTimeout(game.roundTimer);
-  game.roundTimer = setTimeout(() => endRound(game), ROUND_SECONDS * 1000 + 300);
+  // +800ms so client auto-submits at 0s are always accepted
+  game.roundTimer = setTimeout(() => endRound(game), ROUND_SECONDS * 1000 + 800);
 }
 
 function maybeEndEarly(game) {
@@ -207,6 +229,7 @@ function endRound(game) {
     standings: standings(game),
     isFinal,
     autoAdvanceSeconds: isFinal ? null : RESULTS_AUTO_ADVANCE_SECONDS,
+    resultsEndsAt: isFinal ? null : Date.now() + RESULTS_AUTO_ADVANCE_SECONDS * 1000,
   };
 
   io.to(game.code).emit('round_results', game.lastRoundResults);
@@ -292,7 +315,7 @@ io.on('connection', (socket) => {
   socket.on('submit_answer', ({ value }, cb) => {
     const game = myGame;
     if (!game || game.state !== 'question') return cb && cb({ ok: false, error: 'No active question.' });
-    if (Date.now() > game.roundEndsAt + 500) return cb && cb({ ok: false, error: 'Too late!' });
+    if (Date.now() > game.roundEndsAt + 1500) return cb && cb({ ok: false, error: 'Too late!' });
     const num = Number(value);
     if (!isFinite(num)) return cb && cb({ ok: false, error: 'That is not a number.' });
     game.answers.set(myPlayerId, num);

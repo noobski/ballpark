@@ -18,7 +18,8 @@
     --radius: 18px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; }
+  html, body { height: 100%; touch-action: manipulation; } /* kills iOS double-tap zoom */
+  button, input { touch-action: manipulation; }
   body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     background: radial-gradient(1200px 800px at 70% -10%, #2b2f6e 0%, var(--bg) 55%);
@@ -101,9 +102,9 @@
   .guess-display .placeholder { color: #3a3f78; font-size: 1.2rem; font-weight: 500; }
 
   .keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
-  .keypad button { padding: 15px 0; font-size: 1.25rem; background: var(--card2); color: var(--text); border-radius: 12px; }
-  .keypad button.mult { background: #343a7d; color: var(--accent); font-size: 1rem; }
+  .keypad button { padding: 15px 0; font-size: 1.25rem; background: var(--card2); color: var(--text); border-radius: 12px; user-select: none; }
   .keypad button.danger { color: var(--bad); }
+  .keypad button.zero { grid-column: span 2; }
   .keypad button.submit { grid-column: span 4; background: var(--accent); color: #1a1a2e; font-size: 1.15rem; }
   .answered-note { text-align: center; margin-top: 14px; color: var(--good); font-weight: 700; min-height: 1.4em; }
   .answer-count { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 6px; }
@@ -116,10 +117,24 @@
   .results-table td.num, .results-table th.num { text-align: right; }
   .medal { font-size: 1.1rem; }
   .pts { font-weight: 800; color: var(--good); }
-  .crowd-note { text-align: center; background: var(--card2); border-radius: 12px; padding: 12px; margin-top: 12px; font-size: .95rem; line-height: 1.4; }
-  .stat-line { display: flex; justify-content: space-around; margin-top: 10px; color: var(--muted); font-size: .9rem; }
-  .stat-line b { color: var(--text); }
+  .avg-row td { color: var(--accent2); font-style: italic; }
   .section-title { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; margin: 4px 0 8px; }
+
+  /* mini podium between rounds */
+  .mini-podium { display: flex; align-items: flex-end; justify-content: center; gap: 8px; }
+  .mini-podium .col { text-align: center; flex: 1; max-width: 110px; }
+  .mini-podium .name { font-weight: 700; font-size: .85rem; margin-bottom: 3px; word-break: break-word; }
+  .mini-podium .score { color: var(--muted); font-size: .8rem; margin-bottom: 4px; }
+  .mini-podium .bar { border-radius: 9px 9px 0 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 4px; font-size: 1.15rem; }
+  .mini-podium .p1 .bar { height: 62px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
+  .mini-podium .p2 .bar { height: 44px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
+  .mini-podium .p3 .bar { height: 32px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  .you-line { text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08); font-size: 1rem; }
+  .you-line b { color: var(--accent); }
+
+  /* shrinking countdown to next round */
+  .advance-wrap { height: 8px; background: var(--card2); border-radius: 999px; overflow: hidden; margin: 12px 2px 4px; }
+  .advance-bar { height: 100%; width: 100%; background: var(--accent); border-radius: 999px; }
 
   /* Podium */
   .podium { display: flex; align-items: flex-end; justify-content: center; gap: 8px; margin: 22px 0 10px; }
@@ -201,7 +216,8 @@
   <div class="card code-box">
     <div class="section-title">Share this code with your friends</div>
     <div class="code" id="lobby-code" title="Tap to copy">----</div>
-    <div class="hint" id="copy-hint">tap the code to copy the join link</div>
+    <div class="hint" id="copy-hint">tap the word to copy it</div>
+    <button class="secondary" id="btn-copy-link" style="margin-top:10px">🔗 Copy invite link</button>
   </div>
   <div class="card">
     <div class="section-title">Players (<span id="player-count">0</span>)</div>
@@ -232,8 +248,8 @@
   <div class="keypad" id="keypad">
     <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><button data-k="back" class="danger">⌫</button>
     <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><button data-k="clear" class="danger">C</button>
-    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button><button data-k="." >.</button>
-    <button data-k="0">0</button><button data-k="000">000</button><button data-k="M" class="mult">×1M</button><button data-k="B" class="mult">×1B</button>
+    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button><button data-k="neg">±</button>
+    <button data-k="0" class="zero">0</button><button data-k="000">000</button><button data-k=".">.</button>
     <button data-k="submit" class="submit" id="btn-submit">Lock it in 🔒</button>
   </div>
   <div class="answered-note" id="answered-note"></div>
@@ -249,25 +265,19 @@
   <div class="unit-label" id="res-unit"></div>
 
   <div class="card">
-    <div class="section-title">This round</div>
     <table class="results-table" id="res-table">
       <thead><tr><th></th><th>Player</th><th class="num">Guess</th><th class="num">Off by</th><th class="num">Pts</th></tr></thead>
       <tbody></tbody>
     </table>
-    <div class="stat-line"><span>Average: <b id="res-avg">–</b></span><span>Median: <b id="res-med">–</b></span></div>
-    <div class="crowd-note" id="crowd-note" style="display:none"></div>
   </div>
 
   <div class="card">
-    <div class="section-title">Standings</div>
-    <table class="results-table" id="standings-table">
-      <thead><tr><th></th><th>Player</th><th class="num">Score</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="mini-podium" id="mini-podium"></div>
+    <div class="you-line" id="you-line" style="display:none"></div>
   </div>
 
   <button id="btn-next" style="display:none">Next round →</button>
-  <div class="hint" id="auto-advance-note"></div>
+  <div class="advance-wrap" id="advance-wrap"><div class="advance-bar" id="advance-bar"></div></div>
 </div>
 
 <!-- FINAL -->
@@ -294,13 +304,12 @@
 (() => {
   const socket = io();
 
-  // ---------- funny nickname generator ----------
-  const NICK_A = ['Captain','Professor','Baron','Lady','Sir','Doctor','Agent','Grandma','Uncle','Princess','Chief','Duke','Sergeant','Master','Lord','Queen','King','Saint','Wizard','Ninja'];
-  const NICK_B = ['Waffles','Noodle','Pickles','Sparkle','Thunder','Biscuit','Wobble','Cheese','Muffin','Chaos','Tofu','Giggles','Pancake','Doom','Sprinkles','Falafel','Hummus','Turbo','Disco','Nugget'];
-  const NICK_C = ['III','Jr.','the Brave','the Confused','of Doom','McGee','the Wise','5000','the Unready','von Guess','PhD','the Great','esq.','the Snacky',''];
+  // ---------- nickname suggestions: short & sweet ----------
+  const NICKS = ['Waffles','Pickles','Noodle','Turbo','Biscuit','Muffin','Nugget','Disco','Taco','Mango',
+    'Pepper','Ziggy','Bubbles','Rocket','Cookie','Peanut','Olive','Coco','Momo','Kiwi',
+    'Sunny','Ducky','Panda','Tiger','Moose','Otter','Gizmo','Pixel','Banjo','Pesto'];
   function funnyNick() {
-    const pick = (a) => a[Math.floor(Math.random() * a.length)];
-    return `${pick(NICK_A)} ${pick(NICK_B)} ${pick(NICK_C)}`.trim().slice(0, 24).trim();
+    return NICKS[Math.floor(Math.random() * NICKS.length)];
   }
 
   // ---------- state ----------
@@ -318,17 +327,17 @@
     $(screenId).classList.add('active');
     window.scrollTo(0, 0);
   }
+  // Always show the full number with commas — never abbreviate to 1B/10M etc.
   function fmt(n) {
     if (n === null || n === undefined) return '–';
-    if (Math.abs(n) >= 1000) {
-      if (Math.abs(n) >= 1e12) return (n / 1e12).toFixed(n % 1e12 ? 2 : 0).replace(/\.?0+$/,'') + 'T';
-      if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(n % 1e9 ? 2 : 0).replace(/\.?0+$/,'') + 'B';
-      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(n % 1e6 ? 2 : 0).replace(/\.?0+$/,'') + 'M';
-      return n.toLocaleString('en-US');
-    }
-    return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+    const rounded = Math.round(n * 100) / 100;
+    return rounded.toLocaleString('en-US', { maximumFractionDigits: 2 });
   }
   const MEDALS = ['🥇','🥈','🥉'];
+
+  // ---------- iOS: kill double-tap zoom & pinch ----------
+  document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+  document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
 
   // ---------- home ----------
   $('btn-show-create').onclick = () => {
@@ -351,6 +360,7 @@
 
   // ---------- nickname ----------
   $('btn-shuffle-nick').onclick = () => { $('nick-input').value = funnyNick(); };
+  $('nick-input').addEventListener('focus', function () { this.select(); }); // typing replaces suggestion
   $('btn-nick-back').onclick = () => show('screen-home');
   $('btn-nick-go').onclick = () => {
     const nick = $('nick-input').value.trim();
@@ -402,10 +412,19 @@
   }
 
   $('lobby-code').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(me.code);
+      $('copy-hint').textContent = `✅ "${me.code}" copied!`;
+    } catch {
+      $('copy-hint').textContent = me.code;
+    }
+  };
+  $('btn-copy-link').onclick = async () => {
     const link = `${location.origin}${location.pathname}?join=${me.code}`;
     try {
       await navigator.clipboard.writeText(link);
-      $('copy-hint').textContent = '✅ link copied — send it to your friends!';
+      $('btn-copy-link').textContent = '✅ Link copied — send it to your friends!';
+      setTimeout(() => { $('btn-copy-link').textContent = '🔗 Copy invite link'; }, 2500);
     } catch {
       $('copy-hint').textContent = link;
     }
@@ -423,6 +442,7 @@
 
   // ---------- question ----------
   socket.on('round_start', (data) => {
+    clearInterval(advanceInterval);
     answeredThisRound = false;
     currentGuess = '';
     renderGuess();
@@ -450,6 +470,10 @@
       arc.style.stroke = remain <= 5 ? '#ff6b6b' : '#ffcc4d';
       if (remainMs <= 0) {
         clearInterval(timerInterval);
+        // Time's up: whatever is typed counts, even without pressing lock
+        if (!answeredThisRound && currentGuess && isFinite(Number(currentGuess))) {
+          submitGuess();
+        }
         setKeypadEnabled(false);
       }
     }
@@ -469,24 +493,28 @@
     else d.textContent = num.toLocaleString('en-US', { maximumFractionDigits: 10 });
   }
 
-  $('keypad').addEventListener('click', (e) => {
-    const k = e.target.closest('button')?.dataset.k;
+  // pointerdown (not click) => instant, reliable taps on iOS
+  $('keypad').addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    const k = btn.dataset.k;
     if (!k || answeredThisRound) return;
     if (k === 'submit') return submitGuess();
     if (k === 'back') currentGuess = currentGuess.slice(0, -1);
     else if (k === 'clear') currentGuess = '';
+    else if (k === 'neg') currentGuess = currentGuess.startsWith('-') ? currentGuess.slice(1) : '-' + currentGuess;
     else if (k === '.') { if (!currentGuess.includes('.')) currentGuess = (currentGuess || '0') + '.'; }
-    else if (k === 'M') { const n = Number(currentGuess); if (isFinite(n) && currentGuess) currentGuess = String(n * 1e6); }
-    else if (k === 'B') { const n = Number(currentGuess); if (isFinite(n) && currentGuess) currentGuess = String(n * 1e9); }
-    else if (currentGuess.replace('.', '').length < 15) currentGuess += k;
+    else if (currentGuess.replace(/[.-]/g, '').length < 12) currentGuess += k;
     renderGuess();
   });
 
   // physical keyboard support
   document.addEventListener('keydown', (e) => {
     if (!$('screen-question').classList.contains('active') || answeredThisRound) return;
-    if (/^[0-9]$/.test(e.key) && currentGuess.replace('.', '').length < 15) { currentGuess += e.key; renderGuess(); }
+    if (/^[0-9]$/.test(e.key) && currentGuess.replace(/[.-]/g, '').length < 12) { currentGuess += e.key; renderGuess(); }
     else if (e.key === '.') { if (!currentGuess.includes('.')) { currentGuess = (currentGuess || '0') + '.'; renderGuess(); } }
+    else if (e.key === '-') { currentGuess = currentGuess.startsWith('-') ? currentGuess.slice(1) : '-' + currentGuess; renderGuess(); }
     else if (e.key === 'Backspace') { currentGuess = currentGuess.slice(0, -1); renderGuess(); }
     else if (e.key === 'Enter') submitGuess();
   });
@@ -511,6 +539,8 @@
   });
 
   // ---------- results ----------
+  let advanceInterval = null;
+
   socket.on('round_results', (data) => {
     clearInterval(timerInterval);
     $('res-round-label').textContent = `Round ${data.round} of ${data.totalRounds} — results`;
@@ -518,47 +548,85 @@
     $('res-question').textContent = data.question;
     $('res-answer').textContent = fmt(data.answer);
     $('res-unit').textContent = data.unit;
-    $('res-avg').textContent = fmt(data.average);
-    $('res-med').textContent = fmt(data.median);
+
+    // Build display rows: real players + the crowd's average slotted in by closeness
+    const rows = data.results.map((r) => ({ ...r, isAvg: false }));
+    if (data.average !== null && data.results.filter((r) => r.guess !== null).length >= 2) {
+      const avgDelta = Math.abs(data.average - data.answer);
+      let idx = rows.findIndex((r) => r.delta === null || r.delta > avgDelta);
+      if (idx === -1) idx = rows.length;
+      rows.splice(idx, 0, { isAvg: true, nick: 'Average', guess: data.average, delta: avgDelta });
+    }
 
     const tb = $('res-table').querySelector('tbody');
     tb.innerHTML = '';
-    data.results.forEach((r) => {
+    rows.forEach((r) => {
       const tr = document.createElement('tr');
-      const medal = r.rank && r.rank <= 3 ? MEDALS[r.rank - 1] : (r.rank ? r.rank + '.' : '💤');
-      tr.innerHTML = `
-        <td class="medal">${medal}</td>
-        <td>${escapeHtml(r.nick)}${r.playerId === me.playerId ? ' <span style="color:var(--muted)">(you)</span>' : ''}</td>
-        <td class="num">${r.guess === null ? '<span style="color:var(--muted)">no answer</span>' : fmt(r.guess)}</td>
-        <td class="num">${r.delta === null ? '–' : fmt(r.delta)}</td>
-        <td class="num pts">+${r.points}</td>`;
+      if (r.isAvg) {
+        tr.className = 'avg-row';
+        tr.innerHTML = `
+          <td>🧠</td>
+          <td>Average</td>
+          <td class="num">${fmt(r.guess)}</td>
+          <td class="num">${fmt(r.delta)}</td>
+          <td class="num">–</td>`;
+      } else {
+        const medal = r.rank && r.rank <= 3 ? MEDALS[r.rank - 1] : (r.rank ? r.rank + '.' : '💤');
+        tr.innerHTML = `
+          <td class="medal">${medal}</td>
+          <td>${escapeHtml(r.nick)}${r.playerId === me.playerId ? ' <span style="color:var(--muted)">(you)</span>' : ''}</td>
+          <td class="num">${r.guess === null ? '<span style="color:var(--muted)">no answer</span>' : fmt(r.guess)}</td>
+          <td class="num">${r.delta === null ? '–' : fmt(r.delta)}</td>
+          <td class="num pts">+${r.points}</td>`;
+      }
       tb.appendChild(tr);
     });
 
-    const cn = $('crowd-note');
-    if (data.crowdNote) { cn.style.display = ''; cn.textContent = data.crowdNote; }
-    else cn.style.display = 'none';
-
-    const sb = $('standings-table').querySelector('tbody');
-    sb.innerHTML = '';
-    data.standings.forEach((s, i) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${i + 1}.</td><td>${escapeHtml(s.nick)}</td><td class="num"><b>${s.score}</b></td>`;
-      sb.appendChild(tr);
+    // Standings: mini podium (top 3) + "you" line if outside the podium
+    const podium = $('mini-podium');
+    podium.innerHTML = '';
+    const order = [1, 0, 2]; // visual: 2nd, 1st, 3rd
+    const classes = ['p1', 'p2', 'p3'];
+    order.forEach((idx) => {
+      const s = data.standings[idx];
+      if (!s) return;
+      const col = document.createElement('div');
+      col.className = `col ${classes[idx]}`;
+      col.innerHTML = `
+        <div class="name">${escapeHtml(s.nick)}</div>
+        <div class="score">${s.score} pts</div>
+        <div class="bar">${MEDALS[idx]}</div>`;
+      podium.appendChild(col);
     });
-
-    if (!data.isFinal) {
-      $('btn-next').style.display = me.isHost ? '' : 'none';
-      $('auto-advance-note').textContent = me.isHost
-        ? `Auto-advances in ${data.autoAdvanceSeconds}s if you don't click`
-        : 'Next round starting soon…';
-      show('screen-results');
+    const myIdx = data.standings.findIndex((s) => s.id === me.playerId);
+    const youLine = $('you-line');
+    if (myIdx > 2) {
+      const s = data.standings[myIdx];
+      youLine.style.display = '';
+      youLine.innerHTML = `${myIdx + 1}. <b>${escapeHtml(s.nick)}</b> &nbsp; ${s.score} pts`;
     } else {
-      // final results shown briefly, then game_over event switches screen
-      show('screen-results');
-      $('btn-next').style.display = 'none';
-      $('auto-advance-note').textContent = '';
+      youLine.style.display = 'none';
     }
+
+    // Next-round countdown bar (host can skip ahead with the button)
+    clearInterval(advanceInterval);
+    if (!data.isFinal && data.resultsEndsAt) {
+      $('btn-next').style.display = me.isHost ? '' : 'none';
+      $('advance-wrap').style.display = '';
+      const total = data.autoAdvanceSeconds * 1000;
+      const bar = $('advance-bar');
+      const tickBar = () => {
+        const remain = Math.max(0, data.resultsEndsAt - Date.now());
+        bar.style.width = (remain / total) * 100 + '%';
+        if (remain <= 0) clearInterval(advanceInterval);
+      };
+      tickBar();
+      advanceInterval = setInterval(tickBar, 100);
+    } else {
+      $('btn-next').style.display = 'none';
+      $('advance-wrap').style.display = 'none';
+    }
+    show('screen-results');
   });
 
   $('btn-next').onclick = () => socket.emit('next_round', {}, () => {});
