@@ -75,6 +75,8 @@ async function playFullGame(sockets, gameNum, startsPromise) {
 
   const over = await overPromise;
   check(over.standings.length === 3, 'game_over has final standings');
+  check(typeof over.crowdScore === 'number' && over.crowdScore > 0,
+    `game_over has crowdScore for the Average shadow player (${over.crowdScore})`);
   check(Array.isArray(over.history) && over.history.length === 10, 'game_over has 10-question recap');
   check(over.history.every((h) => typeof h.answer === 'number' && typeof h.average === 'number'
     && typeof h.median === 'number' && h.question && h.category && h.unit),

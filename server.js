@@ -63,6 +63,7 @@ function createGame() {
     questions: [],
     usedQuestionTexts: new Set(),
     answers: new Map(), // playerId -> number
+    crowdScore: 0, // points the crowd's average would have earned as a player
     roundHistory: [], // per-round recap: question, answer, avg, median
     roundEndsAt: null,
     roundTimer: null,
@@ -181,6 +182,13 @@ function endRound(game) {
   const guesses = answered.map((r) => r.guess);
   const avg = guesses.length ? guesses.reduce((s, g) => s + g, 0) / guesses.length : null;
   const med = median(guesses);
+
+  // Score the average as a shadow player (doesn't affect real players' points)
+  if (guesses.length >= 2) {
+    const avgDelta = Math.abs(avg - answer);
+    const crowdRank = answered.filter((r) => r.delta < avgDelta).length + 1;
+    game.crowdScore += crowdRank <= RANK_POINTS.length ? RANK_POINTS[crowdRank - 1] : 1;
+  }
   let crowdNote = null;
   if (guesses.length >= 2) {
     const bestDelta = answered[0].delta;
@@ -239,6 +247,7 @@ function endRound(game) {
     io.to(game.code).emit('game_over', {
       standings: standings(game),
       history: game.roundHistory,
+      crowdScore: game.crowdScore,
       code: game.code,
     });
   } else {
@@ -255,6 +264,7 @@ function resetForNewGame(game) {
   game.state = 'lobby';
   game.round = 0;
   game.answers = new Map();
+  game.crowdScore = 0;
   game.roundHistory = [];
   game.lastRoundResults = null;
   clearTimeout(game.roundTimer);

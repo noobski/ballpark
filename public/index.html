@@ -55,6 +55,20 @@
   input[type=text]:focus { border-color: var(--accent2); }
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }
+
+  /* 4-square game code entry */
+  .code-entry { position: relative; display: flex; gap: 10px; justify-content: center; }
+  .code-entry .sq {
+    width: 58px; height: 64px; background: #12143a; border: 2px solid var(--card2);
+    border-radius: 12px; font-size: 1.9rem; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; color: var(--accent);
+  }
+  .code-entry .sq.filled { border-color: var(--accent2); }
+  .code-entry .sq.cursor { border-color: var(--accent); }
+  .code-entry input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; border: none; font-size: 16px; /* 16px stops iOS auto-zoom on focus */
+  }
   .hint { color: var(--muted); font-size: .85rem; text-align: center; margin-top: 8px; }
   .error { color: var(--bad); text-align: center; margin-top: 10px; min-height: 1.2em; font-size: .95rem; }
 
@@ -145,7 +159,12 @@
   .podium .p1 .bar { height: 120px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
   .podium .p2 .bar { height: 88px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
   .podium .p3 .bar { height: 64px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  .podium .col.avg .bar { background: linear-gradient(180deg, #9b8cff, #5b4bd6); }
+  .podium .col.avg .name { color: var(--accent2); font-style: italic; }
   .confetti-title { text-align: center; font-size: 1.7rem; font-weight: 800; margin-top: 18px; }
+  #final-table .medal { font-size: 1.6rem; }
+  #final-table td { font-size: 1.05rem; }
+  #final-table .avg-row td { font-size: 1rem; }
 
   .footer-note { text-align: center; color: var(--muted); font-size: .8rem; padding: 12px; }
 
@@ -187,10 +206,11 @@
   </div>
   <div class="card">
     <div class="section-title">Have a code? Join a game</div>
-    <div class="row">
-      <input type="text" id="join-code" placeholder="CODE" maxlength="4" autocomplete="off" style="text-transform:uppercase">
-      <button class="secondary" id="btn-show-join">Join →</button>
+    <div class="code-entry" id="code-entry">
+      <div class="sq" id="sq0"></div><div class="sq" id="sq1"></div><div class="sq" id="sq2"></div><div class="sq" id="sq3"></div>
+      <input type="text" id="join-code" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
     </div>
+    <button class="secondary" id="btn-show-join" style="margin-top:12px">Join →</button>
   </div>
   <div class="error" id="home-error"></div>
   <div class="spacer"></div>
@@ -317,6 +337,7 @@
   let pendingAction = null; // 'create' | 'join'
   let pendingCode = null;
   let currentGuess = '';
+  let currentUnit = '';
   let timerInterval = null;
   let answeredThisRound = false;
 
@@ -328,8 +349,11 @@
     window.scrollTo(0, 0);
   }
   // Always show the full number with commas — never abbreviate to 1B/10M etc.
-  function fmt(n) {
+  // Years are shown plain: "1984", never "1,984".
+  const isYearUnit = (u) => !!u && /year/.test(u);
+  function fmt(n, unit) {
     if (n === null || n === undefined) return '–';
+    if (isYearUnit(unit)) return String(Math.round(n * 10) / 10);
     const rounded = Math.round(n * 100) / 100;
     return rounded.toLocaleString('en-US', { maximumFractionDigits: 2 });
   }
@@ -354,13 +378,33 @@
     $('nick-input').value = funnyNick();
     show('screen-nick');
   };
+  // 4-square code entry (hidden input overlays the squares)
+  const joinInput = $('join-code');
+  function renderCodeSquares() {
+    const v = joinInput.value;
+    for (let i = 0; i < 4; i++) {
+      const sq = $('sq' + i);
+      sq.textContent = v[i] || '';
+      sq.classList.toggle('filled', !!v[i]);
+      sq.classList.toggle('cursor', i === v.length && document.activeElement === joinInput);
+    }
+  }
+  joinInput.addEventListener('input', () => {
+    joinInput.value = joinInput.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+    renderCodeSquares();
+  });
+  joinInput.addEventListener('focus', renderCodeSquares);
+  joinInput.addEventListener('blur', renderCodeSquares);
+  joinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-show-join').click(); });
+
   // support ?join=CODE links
   const urlCode = new URLSearchParams(location.search).get('join');
-  if (urlCode) { $('join-code').value = urlCode.toUpperCase(); }
+  if (urlCode) { joinInput.value = urlCode.toUpperCase().slice(0, 4); renderCodeSquares(); }
 
   // ---------- nickname ----------
   $('btn-shuffle-nick').onclick = () => { $('nick-input').value = funnyNick(); };
   $('nick-input').addEventListener('focus', function () { this.select(); }); // typing replaces suggestion
+  $('nick-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-nick-go').click(); });
   $('btn-nick-back').onclick = () => show('screen-home');
   $('btn-nick-go').onclick = () => {
     const nick = $('nick-input').value.trim();
@@ -445,6 +489,7 @@
     clearInterval(advanceInterval);
     answeredThisRound = false;
     currentGuess = '';
+    currentUnit = data.unit;
     renderGuess();
     $('round-label').textContent = `Round ${data.round} of ${data.totalRounds}`;
     $('cat-chip').textContent = data.category;
@@ -489,7 +534,7 @@
     const d = $('guess-display');
     if (!currentGuess) { d.innerHTML = '<span class="placeholder">type your guess…</span>'; return; }
     const num = Number(currentGuess);
-    if (currentGuess.endsWith('.') || !isFinite(num)) d.textContent = currentGuess;
+    if (isYearUnit(currentUnit) || currentGuess.endsWith('.') || !isFinite(num)) d.textContent = currentGuess;
     else d.textContent = num.toLocaleString('en-US', { maximumFractionDigits: 10 });
   }
 
@@ -527,7 +572,7 @@
       if (res.ok) {
         answeredThisRound = true;
         setKeypadEnabled(false);
-        $('answered-note').textContent = `Locked in: ${fmt(value)} ✔`;
+        $('answered-note').textContent = `Locked in: ${fmt(value, currentUnit)} ✔`;
       } else {
         $('answered-note').textContent = res.error || '';
       }
@@ -546,7 +591,7 @@
     $('res-round-label').textContent = `Round ${data.round} of ${data.totalRounds} — results`;
     $('res-cat').textContent = data.category;
     $('res-question').textContent = data.question;
-    $('res-answer').textContent = fmt(data.answer);
+    $('res-answer').textContent = fmt(data.answer, data.unit);
     $('res-unit').textContent = data.unit;
 
     // Build display rows: real players + the crowd's average slotted in by closeness
@@ -567,16 +612,16 @@
         tr.innerHTML = `
           <td>🧠</td>
           <td>Average</td>
-          <td class="num">${fmt(r.guess)}</td>
-          <td class="num">${fmt(r.delta)}</td>
+          <td class="num">${fmt(r.guess, data.unit)}</td>
+          <td class="num">${fmt(r.delta, data.unit)}</td>
           <td class="num">–</td>`;
       } else {
         const medal = r.rank && r.rank <= 3 ? MEDALS[r.rank - 1] : (r.rank ? r.rank + '.' : '💤');
         tr.innerHTML = `
           <td class="medal">${medal}</td>
           <td>${escapeHtml(r.nick)}${r.playerId === me.playerId ? ' <span style="color:var(--muted)">(you)</span>' : ''}</td>
-          <td class="num">${r.guess === null ? '<span style="color:var(--muted)">no answer</span>' : fmt(r.guess)}</td>
-          <td class="num">${r.delta === null ? '–' : fmt(r.delta)}</td>
+          <td class="num">${r.guess === null ? '<span style="color:var(--muted)">no answer</span>' : fmt(r.guess, data.unit)}</td>
+          <td class="num">${r.delta === null ? '–' : fmt(r.delta, data.unit)}</td>
           <td class="num pts">+${r.points}</td>`;
       }
       tb.appendChild(tr);
@@ -637,26 +682,43 @@
   });
 
   function renderFinal(data) {
+    // Merge the crowd's Average into the standings as a shadow player
+    const entries = data.standings.map((s) => ({ ...s, isAvg: false }));
+    if (typeof data.crowdScore === 'number' && data.crowdScore > 0) {
+      let idx = entries.findIndex((e) => e.score < data.crowdScore);
+      if (idx === -1) idx = entries.length;
+      entries.splice(idx, 0, { nick: 'Average', score: data.crowdScore, isAvg: true });
+    }
+
     const podium = $('podium');
     podium.innerHTML = '';
     const order = [1, 0, 2]; // 2nd, 1st, 3rd visual arrangement
     const classes = ['p1', 'p2', 'p3'];
     order.forEach((idx) => {
-      const s = data.standings[idx];
+      const s = entries[idx];
       if (!s) return;
       const col = document.createElement('div');
-      col.className = `col ${classes[idx]}`;
+      col.className = `col ${classes[idx]}${s.isAvg ? ' avg' : ''}`;
       col.innerHTML = `
-        <div class="name">${escapeHtml(s.nick)}</div>
+        <div class="name">${s.isAvg ? '🧠 Average' : escapeHtml(s.nick)}</div>
         <div class="score">${s.score} pts</div>
-        <div class="bar">${MEDALS[idx]}</div>`;
+        <div class="bar">${s.isAvg ? '🧠' : MEDALS[idx]}</div>`;
       podium.appendChild(col);
     });
+
     const tb = $('final-table').querySelector('tbody');
     tb.innerHTML = '';
-    data.standings.forEach((s, i) => {
+    let rank = 0;
+    entries.forEach((s, i) => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${i < 3 ? MEDALS[i] : i + 1 + '.'}</td><td>${escapeHtml(s.nick)}</td><td class="num"><b>${s.score}</b></td>`;
+      if (s.isAvg) {
+        tr.className = 'avg-row';
+        tr.innerHTML = `<td class="medal">🧠</td><td>Average</td><td class="num"><b>${s.score}</b></td>`;
+      } else {
+        rank++;
+        const badge = i < 3 ? `<span class="medal">${MEDALS[i]}</span>` : rank + '.';
+        tr.innerHTML = `<td class="medal">${badge}</td><td>${escapeHtml(s.nick)}${s.id === me.playerId ? ' <span style="color:var(--muted)">(you)</span>' : ''}</td><td class="num"><b>${s.score}</b></td>`;
+      }
       tb.appendChild(tr);
     });
 
@@ -670,9 +732,9 @@
         <div class="recap-cat">R${h.round} · ${escapeHtml(h.category)}</div>
         <div class="recap-q">${escapeHtml(h.question)}</div>
         <div class="recap-stats">
-          <span class="real">Real: <b>${fmt(h.answer)}</b> ${escapeHtml(h.unit)}</span>
-          <span>Avg: <b>${fmt(h.average)}</b></span>
-          <span>Median: <b>${fmt(h.median)}</b></span>
+          <span class="real">Real: <b>${fmt(h.answer, h.unit)}</b> ${escapeHtml(h.unit)}</span>
+          <span>Avg: <b>${fmt(h.average, h.unit)}</b></span>
+          <span>Median: <b>${fmt(h.median, h.unit)}</b></span>
         </div>`;
       recap.appendChild(div);
     });
