@@ -61,6 +61,8 @@ async function playFullGame(sockets, gameNum, startsPromise) {
     check(typeof results.average === 'number' && typeof results.median === 'number',
       `average=${results.average.toFixed(1)}, median=${results.median}`);
     check(results.standings.length === 3, `standings included`);
+    check(typeof results.crowdPoints === 'number' && results.crowdPoints >= 1,
+      `average earned ${results.crowdPoints} pts (rank ${results.crowdRank}) this round`);
     check(results.isFinal === (r === 10), `isFinal=${results.isFinal} on round ${r}`);
 
     if (r < 10) {

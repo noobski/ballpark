@@ -145,6 +145,8 @@
   .mini-podium .p1 .bar { height: 82px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
   .mini-podium .p2 .bar { height: 62px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
   .mini-podium .p3 .bar { height: 46px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  .mini-podium .col.avg .bar { background: linear-gradient(180deg, #9b8cff, #5b4bd6); }
+  .mini-podium .col.avg .name { color: var(--accent2); font-style: italic; }
   .you-line { text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08); font-size: 1rem; }
   .you-line b { color: var(--accent); }
 
@@ -668,7 +670,7 @@
           <td>Average</td>
           <td class="num">${fmt(r.guess, data.unit)}</td>
           <td class="num">${fmt(r.delta, data.unit)}</td>
-          <td class="num">–</td>`;
+          <td class="num pts" style="color:var(--accent2)">+${data.crowdPoints || 0}</td>`;
       } else {
         const medal = r.rank && r.rank <= 3 ? MEDALS[r.rank - 1] : (r.rank ? r.rank + '.' : '💤');
         tr.innerHTML = `
@@ -681,26 +683,32 @@
       tb.appendChild(tr);
     });
 
-    // Standings: mini podium (top 3) + "you" line if outside the podium
+    // Standings: mini podium (top 3, Average included as shadow player) + "you" line
+    const stEntries = data.standings.map((s) => ({ ...s, isAvg: false }));
+    if (typeof data.crowdScore === 'number' && data.crowdScore > 0) {
+      let ai = stEntries.findIndex((e) => e.score < data.crowdScore);
+      if (ai === -1) ai = stEntries.length;
+      stEntries.splice(ai, 0, { nick: 'Average', score: data.crowdScore, isAvg: true });
+    }
     const podium = $('mini-podium');
     podium.innerHTML = '';
     const order = [1, 0, 2]; // visual: 2nd, 1st, 3rd
     const classes = ['p1', 'p2', 'p3'];
     order.forEach((idx) => {
-      const s = data.standings[idx];
+      const s = stEntries[idx];
       if (!s) return;
       const col = document.createElement('div');
-      col.className = `col ${classes[idx]}`;
+      col.className = `col ${classes[idx]}${s.isAvg ? ' avg' : ''}`;
       col.innerHTML = `
-        <div class="name">${escapeHtml(s.nick)}</div>
+        <div class="name">${s.isAvg ? '🧠 Average' : escapeHtml(s.nick)}</div>
         <div class="score">${s.score} pts</div>
-        <div class="bar">${MEDALS[idx]}</div>`;
+        <div class="bar">${s.isAvg ? '🧠' : MEDALS[idx]}</div>`;
       podium.appendChild(col);
     });
-    const myIdx = data.standings.findIndex((s) => s.id === me.playerId);
+    const myIdx = stEntries.findIndex((s) => !s.isAvg && s.id === me.playerId);
     const youLine = $('you-line');
     if (myIdx > 2) {
-      const s = data.standings[myIdx];
+      const s = stEntries[myIdx];
       youLine.style.display = '';
       youLine.innerHTML = `${myIdx + 1}. <b>${escapeHtml(s.nick)}</b> &nbsp; ${s.score} pts`;
     } else {

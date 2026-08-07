@@ -184,10 +184,13 @@ function endRound(game) {
   const med = median(guesses);
 
   // Score the average as a shadow player (doesn't affect real players' points)
+  let crowdPoints = 0;
+  let crowdRank = null;
   if (guesses.length >= 2) {
     const avgDelta = Math.abs(avg - answer);
-    const crowdRank = answered.filter((r) => r.delta < avgDelta).length + 1;
-    game.crowdScore += crowdRank <= RANK_POINTS.length ? RANK_POINTS[crowdRank - 1] : 1;
+    crowdRank = answered.filter((r) => r.delta < avgDelta).length + 1;
+    crowdPoints = crowdRank <= RANK_POINTS.length ? RANK_POINTS[crowdRank - 1] : 1;
+    game.crowdScore += crowdPoints;
   }
   let crowdNote = null;
   if (guesses.length >= 2) {
@@ -235,6 +238,9 @@ function endRound(game) {
     median: med,
     crowdNote,
     standings: standings(game),
+    crowdPoints,
+    crowdRank,
+    crowdScore: game.crowdScore,
     isFinal,
     autoAdvanceSeconds: isFinal ? null : RESULTS_AUTO_ADVANCE_SECONDS,
     resultsEndsAt: isFinal ? null : Date.now() + RESULTS_AUTO_ADVANCE_SECONDS * 1000,
