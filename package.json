@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/simulate.js && node test/timeout-test.js"
+    "test": "node test/simulate.js && node test/timeout-test.js && node test/midgame-join.js && node test/draft-outlier.js"
   },
   "engines": { "node": ">=18" },
   "dependencies": {

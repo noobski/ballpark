@@ -22,6 +22,57 @@ const RANK_POINTS = [10, 7, 5, 3]; // 1st..4th, everyone after gets 1, no answer
 /** games: code -> game */
 const games = new Map();
 
+// ---- Global "already asked" ledger ----
+// Every question asked in ANY game is marked here; nothing repeats until the whole
+// bank has been used, then the ledger resets. Persisted to disk (best-effort) so
+// a server restart doesn't start repeating.
+const fs = require('fs');
+const { QUESTIONS } = require('./questions');
+const ASKED_FILE = path.join(__dirname, 'asked.json');
+const askedGlobal = new Set();
+try {
+  const saved = JSON.parse(fs.readFileSync(ASKED_FILE, 'utf8'));
+  if (Array.isArray(saved)) saved.forEach((q) => askedGlobal.add(q));
+  console.log(`Loaded ${askedGlobal.size} previously-asked questions`);
+} catch { /* first run */ }
+let saveTimer = null;
+function saveAsked() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fs.writeFile(ASKED_FILE, JSON.stringify([...askedGlobal]), () => {});
+  }, 500);
+}
+function markAsked(questions) {
+  questions.forEach((q) => askedGlobal.add(q.q));
+  if (askedGlobal.size >= QUESTIONS.length) {
+    console.log('Question bank exhausted — resetting asked ledger');
+    askedGlobal.clear();
+  }
+  saveAsked();
+}
+
+// ---- Outlier-robust average ----
+// With 3+ guesses, drop any guess wildly far from the pack (median ± 3×MAD; when
+// MAD is 0, fall back to 25% of |median|). Returns {avg, used, excluded}.
+function robustAverage(rows) {
+  const answered = rows.filter((r) => r.guess !== null);
+  if (answered.length < 3) {
+    const g = answered.map((r) => r.guess);
+    return { avg: g.length ? g.reduce((s, x) => s + x, 0) / g.length : null, used: answered, excluded: [] };
+  }
+  const guesses = answered.map((r) => r.guess);
+  const med = median(guesses);
+  let mad = median(guesses.map((g) => Math.abs(g - med)));
+  if (mad === 0) mad = Math.abs(med) * 0.25 || 1;
+  const threshold = 3 * mad;
+  const used = answered.filter((r) => Math.abs(r.guess - med) <= threshold);
+  const excluded = answered.filter((r) => Math.abs(r.guess - med) > threshold);
+  // never exclude so many that fewer than 2 remain
+  if (used.length < 2) return { avg: guesses.reduce((s, x) => s + x, 0) / guesses.length, used: answered, excluded: [] };
+  const avg = used.reduce((s, r) => s + r.guess, 0) / used.length;
+  return { avg, used, excluded };
+}
+
 // Real 4-letter words make codes easy to say out loud and remember
 const CODE_WORDS = ('ABLE ACES AQUA ARCH ATOM BAKE BAND BARK BARN BEAM BEAN BEAR BEAT BELL BELT BEND BEST BIKE BIRD BITE ' +
   'BLUE BOAT BOLD BOLT BONE BOOK BOOM BOOT BOSS BOWL BUZZ CAFE CAKE CALM CAMP CARD CARE CART CASH CAST ' +
@@ -62,7 +113,8 @@ function createGame() {
     round: 0,
     questions: [],
     usedQuestionTexts: new Set(),
-    answers: new Map(), // playerId -> number
+    answers: new Map(), // playerId -> number  (locked-in answers)
+    drafts: new Map(), // playerId -> number  (what they've typed so far, used if time runs out)
     crowdScore: 0, // points the crowd's average would have earned as a player
     roundHistory: [], // per-round recap: question, answer, avg, median
     roundEndsAt: null,
@@ -111,6 +163,7 @@ function startRound(game) {
   game.round++;
   game.state = 'question';
   game.answers = new Map();
+  game.drafts = new Map();
   const q = game.questions[game.round - 1];
   game.roundEndsAt = Date.now() + ROUND_SECONDS * 1000;
 
@@ -143,6 +196,11 @@ function endRound(game) {
 
   const q = game.questions[game.round - 1];
   const answer = q.a;
+
+  // Time's up: anyone who typed something but didn't lock in gets their draft counted
+  for (const [pid, draft] of game.drafts) {
+    if (!game.answers.has(pid) && isFinite(draft)) game.answers.set(pid, draft);
+  }
 
   // Build result rows
   const rows = [...game.players.values()].map((p) => {
@@ -178,9 +236,11 @@ function endRound(game) {
     if (p) p.score += r.points;
   }
 
-  // Crowd wisdom
+  // Crowd wisdom (average ignores wild outliers; median uses everyone)
   const guesses = answered.map((r) => r.guess);
-  const avg = guesses.length ? guesses.reduce((s, g) => s + g, 0) / guesses.length : null;
+  const ra = robustAverage(rows);
+  const avg = ra.avg;
+  const excludedFromAverage = ra.excluded.map((r) => r.nick);
   const med = median(guesses);
 
   // Score the average as a shadow player (doesn't affect real players' points)
@@ -236,6 +296,7 @@ function endRound(game) {
     results: sortedRows,
     average: avg,
     median: med,
+    excludedFromAverage,
     crowdNote,
     standings: standings(game),
     crowdPoints,
@@ -270,6 +331,7 @@ function resetForNewGame(game) {
   game.state = 'lobby';
   game.round = 0;
   game.answers = new Map();
+  game.drafts = new Map();
   game.crowdScore = 0;
   game.roundHistory = [];
   game.lastRoundResults = null;
@@ -302,7 +364,7 @@ io.on('connection', (socket) => {
   socket.on('join_game', ({ code, nick }, cb) => {
     const game = games.get(String(code || '').trim().toUpperCase());
     if (!game) return cb && cb({ ok: false, error: 'Game not found. Check the code!' });
-    if (game.state !== 'lobby') return cb && cb({ ok: false, error: 'This game already started. Ask for a new one!' });
+    if (game.state === 'final') return cb && cb({ ok: false, error: 'This game just finished — wait for the host to start a new one.' });
     if (game.players.size >= 12) return cb && cb({ ok: false, error: 'Game is full (12 players max).' });
     const cleanNick = sanitizeNick(nick);
     if ([...game.players.values()].some((p) => p.nick.toLowerCase() === cleanNick.toLowerCase())) {
@@ -313,8 +375,20 @@ io.on('connection', (socket) => {
     myGame = game;
     myPlayerId = playerId;
     socket.join(game.code);
-    cb && cb({ ok: true, code: game.code, playerId, isHost: false, lobby: lobbyState(game) });
+    const inProgress = game.state !== 'lobby';
+    cb && cb({ ok: true, code: game.code, playerId, isHost: false, lobby: lobbyState(game), inProgress });
     emitLobby(game);
+    // Joined mid-game: catch them up with the current screen
+    if (game.state === 'question') {
+      const q = game.questions[game.round - 1];
+      socket.emit('round_start', {
+        round: game.round, totalRounds: ROUNDS_PER_GAME, category: q.cat, question: q.q,
+        unit: q.unit, seconds: ROUND_SECONDS, endsAt: game.roundEndsAt,
+      });
+    } else if (game.state === 'results' && game.lastRoundResults) {
+      socket.emit('round_results', { ...game.lastRoundResults, standings: standings(game) });
+    }
+    if (inProgress) io.to(game.code).emit('player_joined_midgame', { nick: cleanNick });
   });
 
   socket.on('start_game', (_, cb) => {
@@ -322,10 +396,21 @@ io.on('connection', (socket) => {
     if (!game || myPlayerId !== game.hostId) return cb && cb({ ok: false, error: 'Only the host can start.' });
     if (game.state !== 'lobby') return cb && cb({ ok: false, error: 'Game already started.' });
     if (game.players.size < 1) return cb && cb({ ok: false, error: 'Need at least 1 player.' });
-    game.questions = pickQuestions(ROUNDS_PER_GAME, game.usedQuestionTexts);
+    // Avoid anything asked in any game (global ledger) plus this group's own history
+    game.questions = pickQuestions(ROUNDS_PER_GAME, new Set([...askedGlobal, ...game.usedQuestionTexts]));
+    markAsked(game.questions);
     cb && cb({ ok: true });
     io.to(game.code).emit('game_started', {});
     startRound(game);
+  });
+
+  // Client sends what the player has typed so far (throttled); counted if time runs out
+  socket.on('draft_answer', ({ value }) => {
+    const game = myGame;
+    if (!game || game.state !== 'question') return;
+    const num = Number(value);
+    if (value === '' || value === null || !isFinite(num)) game.drafts.delete(myPlayerId);
+    else game.drafts.set(myPlayerId, num);
   });
 
   socket.on('submit_answer', ({ value }, cb) => {

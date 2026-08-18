@@ -31,6 +31,8 @@
   .screen.active { display: flex; }
 
   .logo { text-align: center; margin: 26px 0 8px; font-size: 2.4rem; font-weight: 800; letter-spacing: 1px; }
+  .logo.tappable { cursor: pointer; user-select: none; }
+  .logo-hint { text-align: center; color: var(--good); font-size: .85rem; min-height: 1.2em; margin-top: -4px; }
   .logo .q { color: var(--accent); }
   .tagline { text-align: center; color: var(--muted); margin-bottom: 30px; }
 
@@ -90,40 +92,47 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); flex: none; }
   .dot.off { background: var(--muted); }
 
-  /* Question screen */
+  /* Question screen — compact so the keypad + Lock button fit without scrolling */
+  #screen-question { height: 100dvh; padding: 10px 14px 12px; }
+  #screen-question .q-top { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
+  .cat-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
   .cat-chip {
-    align-self: center; background: var(--accent2); color: white; font-weight: 700;
-    padding: 7px 20px; border-radius: 999px; margin-top: 10px; font-size: .95rem;
+    background: var(--accent2); color: white; font-weight: 700;
+    padding: 4px 14px; border-radius: 999px; font-size: .8rem;
     text-transform: uppercase; letter-spacing: .06em;
   }
-  .round-label { text-align: center; color: var(--muted); margin-top: 14px; font-size: .9rem; }
-  .question-text { text-align: center; font-size: 1.5rem; font-weight: 700; margin: 16px 8px 6px; line-height: 1.35; }
-  .unit-label { text-align: center; color: var(--muted); margin-bottom: 6px; }
+  .round-label { color: var(--muted); font-size: .8rem; }
+  .question-text { text-align: center; font-size: 1.3rem; font-weight: 700; margin: 8px 4px 2px; line-height: 1.3; }
+  .unit-label { text-align: center; color: var(--muted); font-size: .85rem; margin-bottom: 4px; }
 
-  .timer-wrap { display: flex; justify-content: center; margin: 10px 0 4px; }
-  .timer-ring { position: relative; width: 84px; height: 84px; }
-  .timer-ring svg { transform: rotate(-90deg); }
-  .timer-ring .num {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-size: 1.7rem; font-weight: 800;
-  }
-  .timer-ring.hurry .num { color: var(--bad); }
+  /* slim timer: number + shrinking bar */
+  .timer-line { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
+  .timer-line .bar-wrap { flex: 1; height: 10px; background: #2c3070; border-radius: 999px; overflow: hidden; }
+  .timer-line .bar { height: 100%; width: 100%; background: var(--accent); border-radius: 999px; }
+  .timer-line .num { font-size: 1.35rem; font-weight: 800; min-width: 2ch; text-align: right; }
+  .timer-line.hurry .num { color: var(--bad); }
+  .timer-line.hurry .bar { background: var(--bad); }
 
   .guess-display {
-    background: #12143a; border-radius: 14px; min-height: 62px;
+    background: #12143a; border-radius: 12px; min-height: 50px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 1.9rem; font-weight: 800; letter-spacing: .02em; margin: 10px 0;
+    font-size: 1.7rem; font-weight: 800; letter-spacing: .02em; margin: 0 0 8px;
     overflow: hidden; padding: 4px 10px; word-break: break-all;
   }
-  .guess-display .placeholder { color: #3a3f78; font-size: 1.2rem; font-weight: 500; }
+  .guess-display .placeholder { color: #3a3f78; font-size: 1.05rem; font-weight: 500; }
 
-  .keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
-  .keypad button { padding: 15px 0; font-size: 1.25rem; background: var(--card2); color: var(--text); border-radius: 12px; user-select: none; }
+  .keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+  .keypad button { padding: 11px 0; font-size: 1.2rem; background: var(--card2); color: var(--text); border-radius: 11px; user-select: none; }
   .keypad button.danger { color: var(--bad); }
   .keypad button.zero { grid-column: span 2; }
-  .keypad button.submit { grid-column: span 4; background: var(--accent); color: #1a1a2e; font-size: 1.15rem; }
-  .answered-note { text-align: center; margin-top: 14px; color: var(--good); font-weight: 700; min-height: 1.4em; }
-  .answer-count { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 6px; }
+  .keypad button.submit { grid-column: span 4; background: var(--accent); color: #1a1a2e; font-size: 1.1rem; padding: 13px 0; }
+  .answered-note { text-align: center; margin-top: 6px; color: var(--good); font-weight: 700; min-height: 1.3em; font-size: .95rem; }
+  .answer-count { text-align: center; color: var(--muted); font-size: .8rem; min-height: 1.1em; }
+  @media (max-height: 640px) {
+    .question-text { font-size: 1.1rem; }
+    .keypad button { padding: 8px 0; font-size: 1.05rem; }
+    .guess-display { min-height: 42px; font-size: 1.4rem; }
+  }
 
   /* Results */
   .big-answer { text-align: center; font-size: 2.2rem; font-weight: 800; color: var(--accent); margin: 4px 0 2px; }
@@ -142,9 +151,9 @@
   .mini-podium .name { font-weight: 700; font-size: .85rem; margin-bottom: 3px; word-break: break-word; }
   .mini-podium .score { color: var(--muted); font-size: .8rem; margin-bottom: 4px; }
   .mini-podium .bar { border-radius: 9px 9px 0 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 6px; font-size: 2.1rem; }
-  .mini-podium .p1 .bar { height: 82px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
-  .mini-podium .p2 .bar { height: 62px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
-  .mini-podium .p3 .bar { height: 46px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  .mini-podium .p1 .bar { background: linear-gradient(180deg, #ffd75e, #b8860b); }
+  .mini-podium .p2 .bar { background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
+  .mini-podium .p3 .bar { background: linear-gradient(180deg, #e8a76b, #9c5b21); }
   .mini-podium .col.avg .bar { background: linear-gradient(180deg, #9b8cff, #5b4bd6); }
   .mini-podium .col.avg .name { color: var(--accent2); font-style: italic; }
   .you-line { text-align: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.08); font-size: 1rem; }
@@ -160,9 +169,10 @@
   .podium .name { font-weight: 700; margin-bottom: 6px; font-size: .95rem; word-break: break-word; }
   .podium .score { color: var(--muted); font-size: .85rem; margin-bottom: 6px; }
   .podium .bar { border-radius: 12px 12px 0 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 10px; font-size: 3rem; }
-  .podium .p1 .bar { height: 135px; background: linear-gradient(180deg, #ffd75e, #b8860b); }
-  .podium .p2 .bar { height: 102px; background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
-  .podium .p3 .bar { height: 78px; background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  .podium .p1 .bar { background: linear-gradient(180deg, #ffd75e, #b8860b); }
+  .podium .p2 .bar { background: linear-gradient(180deg, #d9dbe8, #8f93a8); }
+  .podium .p3 .bar { background: linear-gradient(180deg, #e8a76b, #9c5b21); }
+  /* bar heights are set inline, proportional to score */
   .podium .col.avg .bar { background: linear-gradient(180deg, #9b8cff, #5b4bd6); }
   .podium .col.avg .name { color: var(--accent2); font-style: italic; }
   .confetti-title { text-align: center; font-size: 1.7rem; font-weight: 800; margin-top: 18px; }
@@ -203,7 +213,8 @@
 
 <!-- HOME -->
 <div class="screen active" id="screen-home">
-  <div class="logo">Ball<span class="q">park</span> ⚾</div>
+  <div class="logo tappable" id="logo-home" title="Tap to copy the game link">Ball<span class="q">park</span> ⚾</div>
+  <div class="logo-hint" id="logo-hint"></div>
   <div class="tagline">10 rounds. Numbers only. Closest wins.</div>
   <div class="card">
     <button id="btn-show-create">🚀 Create a new game</button>
@@ -237,7 +248,8 @@
 
 <!-- LOBBY -->
 <div class="screen" id="screen-lobby">
-  <div class="logo" style="font-size:1.6rem;margin:16px 0 4px">Game Lobby</div>
+  <div class="logo tappable" id="logo-lobby" style="font-size:1.6rem;margin:16px 0 4px" title="Tap to copy the game link">Ball<span class="q">park</span> ⚾</div>
+  <div class="logo-hint" id="logo-hint-lobby"></div>
   <div class="card code-box">
     <div class="section-title">Share this code with your friends</div>
     <div class="code" id="lobby-code" title="Tap to copy">----</div>
@@ -255,19 +267,14 @@
 
 <!-- QUESTION -->
 <div class="screen" id="screen-question">
-  <div class="round-label" id="round-label">Round 1 of 10</div>
-  <div class="cat-chip" id="cat-chip">Geography</div>
-  <div class="question-text" id="question-text"></div>
-  <div class="unit-label" id="unit-label"></div>
-  <div class="timer-wrap">
-    <div class="timer-ring" id="timer-ring">
-      <svg width="84" height="84">
-        <circle cx="42" cy="42" r="36" fill="none" stroke="#2c3070" stroke-width="8"/>
-        <circle id="timer-arc" cx="42" cy="42" r="36" fill="none" stroke="#ffcc4d" stroke-width="8"
-                stroke-linecap="round" stroke-dasharray="226.2" stroke-dashoffset="0"/>
-      </svg>
-      <div class="num" id="timer-num">20</div>
-    </div>
+  <div class="q-top">
+    <div class="cat-row"><span class="cat-chip" id="cat-chip">Geography</span><span class="round-label" id="round-label">Round 1 of 10</span></div>
+    <div class="question-text" id="question-text"></div>
+    <div class="unit-label" id="unit-label"></div>
+  </div>
+  <div class="timer-line" id="timer-ring">
+    <div class="bar-wrap"><div class="bar" id="timer-arc"></div></div>
+    <div class="num" id="timer-num">20</div>
   </div>
   <div class="guess-display" id="guess-display"><span class="placeholder">type your guess…</span></div>
   <div class="keypad" id="keypad">
@@ -365,6 +372,23 @@
   }
   const MEDALS = ['🥇','🥈','🥉'];
 
+  // ---------- tap the title => copy the app's base URL ----------
+  async function copyBaseUrl(hintId) {
+    const url = location.origin + location.pathname;
+    try { await navigator.clipboard.writeText(url); $(hintId).textContent = '✅ link copied — send it to anyone!'; }
+    catch { $(hintId).textContent = url; }
+    setTimeout(() => { $(hintId).textContent = ''; }, 2500);
+  }
+  $('logo-home').onclick = () => copyBaseUrl('logo-hint');
+  $('logo-lobby').onclick = () => copyBaseUrl('logo-hint-lobby');
+
+  // ---------- podium: bar heights proportional to score ----------
+  // scores -> pixel heights, top score = maxPx, min visible = minPx
+  function podiumHeights(entries, maxPx, minPx) {
+    const top = Math.max(1, ...entries.map((e) => e.score));
+    return entries.map((e) => Math.max(minPx, Math.round((e.score / top) * maxPx)));
+  }
+
   // ---------- iOS: kill double-tap zoom & pinch ----------
   document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
   document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
@@ -424,6 +448,11 @@
       }
       $('home-error').textContent = '';
       onEnteredLobby(res, savedName());
+      if (res.inProgress) {
+        // Server is about to push the live round/results screen — show a brief note meanwhile
+        $('waiting-host-note').textContent = '🎮 Game in progress — jumping in for the next round…';
+        $('waiting-host-note').style.display = '';
+      }
     });
   }
   joinInput.addEventListener('input', () => {
@@ -499,6 +528,7 @@
     $('btn-start').style.display = me.isHost ? '' : 'none';
     $('btn-start').disabled = false;
     $('btn-start').textContent = '▶️ Start game (10 rounds)';
+    $('waiting-host-note').textContent = 'Waiting for the host to start the game…';
     $('waiting-host-note').style.display = me.isHost ? 'none' : '';
   }
 
@@ -539,6 +569,10 @@
   socket.on('lobby_update', (lobby) => {
     if (document.getElementById('screen-lobby').classList.contains('active')) renderLobby(lobby);
   });
+  socket.on('player_joined_midgame', ({ nick }) => {
+    const note = $('answer-count');
+    if (note && $('screen-question').classList.contains('active')) note.textContent = `👋 ${nick} joined the game`;
+  });
 
   // ---------- question ----------
   socket.on('round_start', (data) => {
@@ -561,14 +595,12 @@
   function startTimer(endsAt, totalSeconds) {
     clearInterval(timerInterval);
     const arc = $('timer-arc');
-    const circumference = 226.2;
     function tick() {
       const remainMs = Math.max(0, endsAt - Date.now());
       const remain = Math.ceil(remainMs / 1000);
       $('timer-num').textContent = remain;
-      arc.style.strokeDashoffset = circumference * (1 - remainMs / (totalSeconds * 1000));
+      arc.style.width = (remainMs / (totalSeconds * 1000)) * 100 + '%';
       $('timer-ring').classList.toggle('hurry', remain <= 5);
-      arc.style.stroke = remain <= 5 ? '#ff6b6b' : '#ffcc4d';
       if (remainMs <= 0) {
         clearInterval(timerInterval);
         // Time's up: whatever is typed counts, even without pressing lock
@@ -586,7 +618,19 @@
     document.querySelectorAll('#keypad button').forEach((b) => (b.disabled = !on));
   }
 
+  // Tell the server what's typed so far (throttled) — counted if time runs out un-locked
+  let draftTimer = null;
+  function sendDraft() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => {
+      if (answeredThisRound) return;
+      const v = currentGuess && isFinite(Number(currentGuess)) ? Number(currentGuess) : '';
+      socket.emit('draft_answer', { value: v });
+    }, 250);
+  }
+
   function renderGuess() {
+    sendDraft();
     const d = $('guess-display');
     if (!currentGuess) { d.innerHTML = '<span class="placeholder">type your guess…</span>'; return; }
     const num = Number(currentGuess);
@@ -665,9 +709,11 @@
       const tr = document.createElement('tr');
       if (r.isAvg) {
         tr.className = 'avg-row';
+        const excl = (data.excludedFromAverage || []);
+        const exclNote = excl.length ? `<div style="font-size:.72rem;color:var(--muted);font-style:normal">excl. ${excl.map(escapeHtml).join(', ')}</div>` : '';
         tr.innerHTML = `
           <td>🧠</td>
-          <td>Average</td>
+          <td>Average${exclNote}</td>
           <td class="num">${fmt(r.guess, data.unit)}</td>
           <td class="num">${fmt(r.delta, data.unit)}</td>
           <td class="num pts" style="color:var(--accent2)">+${data.crowdPoints || 0}</td>`;
@@ -694,6 +740,7 @@
     podium.innerHTML = '';
     const order = [1, 0, 2]; // visual: 2nd, 1st, 3rd
     const classes = ['p1', 'p2', 'p3'];
+    const miniH = podiumHeights(stEntries.slice(0, 3), 90, 34);
     order.forEach((idx) => {
       const s = stEntries[idx];
       if (!s) return;
@@ -702,7 +749,7 @@
       col.innerHTML = `
         <div class="name">${s.isAvg ? '🧠 Average' : escapeHtml(s.nick)}</div>
         <div class="score">${s.score} pts</div>
-        <div class="bar">${s.isAvg ? '🧠' : MEDALS[idx]}</div>`;
+        <div class="bar" style="height:${miniH[idx]}px">${s.isAvg ? '🧠' : MEDALS[idx]}</div>`;
       podium.appendChild(col);
     });
     const myIdx = stEntries.findIndex((s) => !s.isAvg && s.id === me.playerId);
@@ -765,6 +812,7 @@
     podium.innerHTML = '';
     const order = [1, 0, 2]; // 2nd, 1st, 3rd visual arrangement
     const classes = ['p1', 'p2', 'p3'];
+    const finalH = podiumHeights(entries.slice(0, 3), 150, 56);
     order.forEach((idx) => {
       const s = entries[idx];
       if (!s) return;
@@ -773,7 +821,7 @@
       col.innerHTML = `
         <div class="name">${s.isAvg ? '🧠 Average' : escapeHtml(s.nick)}</div>
         <div class="score">${s.score} pts</div>
-        <div class="bar">${s.isAvg ? '🧠' : MEDALS[idx]}</div>`;
+        <div class="bar" style="height:${finalH[idx]}px">${s.isAvg ? '🧠' : MEDALS[idx]}</div>`;
       podium.appendChild(col);
     });
 

@@ -615,10 +615,14 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+const Y = require('./data/years');
+const N = require('./data/numbers');
+const STATIC_EXTRA = require('./data/static-extra');
+
 function buildQuestions() {
   const qs = [];
 
-  for (const [name, popM, area, gdpB] of COUNTRIES) {
+  for (const [name, popM, area, gdpB] of [...COUNTRIES, ...N.MORE_COUNTRIES]) {
     qs.push({ cat: 'Geography', q: `What is the population of ${name}?`, a: Math.round(popM * 1e6), unit: 'people' });
     qs.push({ cat: 'Geography', q: `What is the area of ${name} (in km²)?`, a: area, unit: 'km²' });
     if (gdpB) qs.push({ cat: 'Geography', q: `What is the GDP of ${name} (in US dollars)?`, a: Math.round(gdpB * 1e9), unit: 'US$' });
@@ -633,8 +637,10 @@ function buildQuestions() {
     qs.push({ cat: 'Geography', q: `What is the population of ${name}?`, a: Math.round(popM * 1e6), unit: 'people' });
   }
 
+  // Only every other pair -> ~half the distance questions
   for (let i = 0; i < CITY_GEO.length; i++) {
     for (let j = i + 1; j < CITY_GEO.length; j++) {
+      if ((i + j) % 2 !== 0) continue;
       const [n1, la1, lo1] = CITY_GEO[i];
       const [n2, la2, lo2] = CITY_GEO[j];
       const d = Math.round(haversineKm(la1, lo1, la2, lo2) / 10) * 10;
@@ -642,7 +648,7 @@ function buildQuestions() {
     }
   }
 
-  for (const [name, birth] of AGES) {
+  for (const [name, birth] of [...AGES, ...N.MORE_AGES]) {
     qs.push({ cat: 'People', q: `How old is ${name}?`, birth, unit: 'years' });
   }
 
@@ -650,7 +656,41 @@ function buildQuestions() {
     qs.push({ cat: 'People', q: `What is ${name}'s estimated net worth (in US dollars)?`, a: Math.round(b * 1e9), unit: 'US$' });
   }
 
-  qs.push(...STATIC);
+  // ---- Year generators ----
+  for (const [c, y] of Y.COMPANIES_FOUNDED) qs.push({ cat: 'Business & Tech', q: `In what year was ${c} founded?`, a: y, unit: 'year' });
+  for (const [m, y] of Y.MOVIES) qs.push({ cat: 'Movies & TV', q: `In what year was the movie "${m}" released?`, a: y, unit: 'year' });
+  for (const [t, y] of Y.TV_SHOWS) qs.push({ cat: 'Movies & TV', q: `In what year did "${t}" first air on TV?`, a: y, unit: 'year' });
+  for (const [b, y] of Y.BOOKS) qs.push({ cat: 'Books & Literature', q: `In what year was "${b}" published?`, a: y, unit: 'year' });
+  for (const [i, y] of Y.INVENTIONS) qs.push({ cat: 'Science & Nature', q: `In what year was ${i} invented/introduced?`, a: y, unit: 'year' });
+  for (const [p, y] of Y.PRESIDENTS) qs.push({ cat: 'History', q: `In what year did ${p} become US president?`, a: y, unit: 'year' });
+  for (const [c, y] of Y.OLYMPICS) qs.push({ cat: 'Sports', q: `In what year did ${c} host the Summer Olympics?`, a: y, unit: 'year' });
+  for (const [c, y] of Y.WORLD_CUPS) qs.push({ cat: 'Sports', q: `In what year did ${c} host the FIFA World Cup?`, a: y, unit: 'year' });
+  for (const [c, y] of Y.INDEPENDENCE) qs.push({ cat: 'History', q: `In what year did ${c} become independent / founded as a modern state?`, a: y, unit: 'year' });
+  for (const [p, y] of Y.DEATHS) qs.push({ cat: 'History', q: `In what year did ${p} die?`, a: y, unit: 'year' });
+  for (const [w, y] of Y.WARS) qs.push({ cat: 'History', q: `In what year did ${w} begin?`, a: y, unit: 'year' });
+  for (const [g, y] of Y.VIDEO_GAMES) qs.push({ cat: 'Video Games', q: `In what year was ${g} released?`, a: y, unit: 'year' });
+  for (const [a, y] of Y.ALBUMS) qs.push({ cat: 'Music', q: `In what year was the album "${a}" released?`, a: y, unit: 'year' });
+
+  // ---- Numeric generators ----
+  for (const [p, diam, moons, orbit, dist] of N.PLANETS) {
+    qs.push({ cat: 'Space', q: `What is the diameter of ${p} (in km)?`, a: diam, unit: 'km' });
+    qs.push({ cat: 'Space', q: `How many days does ${p} take to orbit the Sun?`, a: orbit, unit: 'days' });
+    qs.push({ cat: 'Space', q: `How far is ${p} from the Sun (in millions of km)?`, a: dist, unit: 'million km' });
+    if (p !== 'Earth' && p !== 'Jupiter') qs.push({ cat: 'Space', q: `How many known moons does ${p} have?`, a: moons, unit: 'moons' });
+  }
+  for (const [e, n] of N.ELEMENTS) qs.push({ cat: 'Science & Nature', q: `What is the atomic number of ${e}?`, a: n, unit: '(atomic number)' });
+  for (const [b, h] of N.BUILDINGS) qs.push({ cat: 'Geography', q: `How tall is ${b} (in meters)?`, a: h, unit: 'meters' });
+  for (const [a, life, kg, kmh] of N.ANIMALS) {
+    qs.push({ cat: 'Animals', q: `How long does ${a} typically live (in years)?`, a: life, unit: 'years' });
+    qs.push({ cat: 'Animals', q: `How much does ${a} weigh (typical adult, in kg)?`, a: kg, unit: 'kg' });
+    qs.push({ cat: 'Animals', q: `What is the top speed of ${a} (in km/h)?`, a: kmh, unit: 'km/h' });
+  }
+  for (const [l, m] of N.LANGUAGES) qs.push({ cat: 'Language & Words', q: `How many native speakers does ${l} have?`, a: Math.round(m * 1e6), unit: 'people' });
+  for (const [f, c] of N.CALORIES) qs.push({ cat: 'Food & Drink', q: `How many calories are in ${f}?`, a: c, unit: 'calories' });
+  for (const [c, k] of N.EMPLOYEES) qs.push({ cat: 'Business & Tech', q: `How many employees does ${c} have?`, a: Math.round(k * 1000), unit: 'employees' });
+  for (const [q, a] of N.CHAMPIONSHIPS) qs.push({ cat: 'Sports', q, a, unit: 'count' });
+
+  qs.push(...STATIC, ...STATIC_EXTRA);
 
   // Scale huge answers so players type small numbers:
   // ≥1 trillion -> trillions, ≥1 billion -> billions, ≥1 million -> millions.

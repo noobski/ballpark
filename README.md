@@ -53,7 +53,7 @@ host works. It respects the `PORT` environment variable.
 
 ```
 server.js          # game logic: rooms, rounds, timers, scoring, crowd stats
-questions.js       # question bank (1,000+ questions, 10 categories) + picker
+questions.js       # question bank (~3,000 questions, 16 categories) + picker
 public/index.html  # entire client (single file: lobby, keypad, results, podium)
 test/simulate.js   # 3-player full-game simulation (2 games incl. play-again)
 test/timeout-test.js  # timer-expiry edge case
@@ -76,4 +76,4 @@ birthdates, net worths), so adding one row often adds several questions.
 
 Each game randomly draws 10 questions spread across categories, and a group that
 plays consecutive games never sees a repeated question until the full bank
-(1,000+) is exhausted.
+(~3,000) is exhausted.
