@@ -290,8 +290,7 @@
 
 <!-- RESULTS -->
 <div class="screen" id="screen-results">
-  <div class="round-label" id="res-round-label"></div>
-  <div class="cat-chip" id="res-cat">Geography</div>
+  <div class="cat-row" style="margin-top:12px"><span class="cat-chip" id="res-cat">Geography</span><span class="round-label" id="res-round-label"></span></div>
   <div class="question-text" id="res-question" style="font-size:1.15rem"></div>
   <div class="big-answer" id="res-answer"></div>
   <div class="unit-label" id="res-unit"></div>
@@ -679,8 +678,12 @@
     });
   }
 
-  socket.on('answer_count', ({ answered, total }) => {
-    $('answer-count').textContent = `${answered} of ${total} players answered`;
+  socket.on('answer_count', ({ answered, total, waitingFor }) => {
+    const el = $('answer-count');
+    const w = (waitingFor || []).map((n) => (n === me.nick ? 'you' : n));
+    if (!w.length) el.textContent = 'Everyone answered ✔';
+    else if (w.length <= 3) el.textContent = `⏳ Waiting for: ${w.join(', ')}`;
+    else el.textContent = `⏳ Waiting for ${w.length} players`;
   });
 
   // ---------- results ----------
@@ -688,7 +691,7 @@
 
   socket.on('round_results', (data) => {
     clearInterval(timerInterval);
-    $('res-round-label').textContent = `Round ${data.round} of ${data.totalRounds} — results`;
+    $('res-round-label').textContent = `Round ${data.round} of ${data.totalRounds}`;
     $('res-cat').textContent = data.category;
     $('res-question').textContent = data.question;
     $('res-answer').textContent = fmt(data.answer, data.unit);

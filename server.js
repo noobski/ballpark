@@ -180,6 +180,18 @@ function startRound(game) {
   clearTimeout(game.roundTimer);
   // +800ms so client auto-submits at 0s are always accepted
   game.roundTimer = setTimeout(() => endRound(game), ROUND_SECONDS * 1000 + 800);
+  setTimeout(() => { if (game.state === 'question') emitAnswerCount(game); }, 50);
+}
+
+// Who has answered / who are we still waiting on (connected players only)
+function emitAnswerCount(game) {
+  const connected = [...game.players.values()].filter((p) => p.connected);
+  const waitingFor = connected.filter((p) => !game.answers.has(p.id)).map((p) => p.nick);
+  io.to(game.code).emit('answer_count', {
+    answered: connected.length - waitingFor.length,
+    total: connected.length,
+    waitingFor,
+  });
 }
 
 function maybeEndEarly(game) {
@@ -421,10 +433,7 @@ io.on('connection', (socket) => {
     if (!isFinite(num)) return cb && cb({ ok: false, error: 'That is not a number.' });
     game.answers.set(myPlayerId, num);
     cb && cb({ ok: true });
-    io.to(game.code).emit('answer_count', {
-      answered: game.answers.size,
-      total: [...game.players.values()].filter((p) => p.connected).length,
-    });
+    emitAnswerCount(game);
     maybeEndEarly(game);
   });
 
@@ -481,7 +490,7 @@ io.on('connection', (socket) => {
           }
         }, 10 * 60 * 1000);
       }
-      if (game.state === 'question') maybeEndEarly(game);
+      if (game.state === 'question') { emitAnswerCount(game); maybeEndEarly(game); }
     }
     emitLobby(game);
   });
