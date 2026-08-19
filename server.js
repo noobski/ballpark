@@ -382,6 +382,17 @@ io.on('connection', (socket) => {
     }
   }
 
+  // "Do I have a game in progress?" — lets a returning device rejoin automatically
+  socket.on('find_my_game', ({ key }, cb) => {
+    const playerId = playerIdFor(key);
+    for (const game of games.values()) {
+      if (game.state === 'final') continue;
+      const p = game.players.get(playerId);
+      if (p) return cb && cb({ ok: true, code: game.code, state: game.state, round: game.round, nick: p.nick });
+    }
+    cb && cb({ ok: false });
+  });
+
   socket.on('create_game', ({ nick, key }, cb) => {
     const game = createGame();
     const playerId = playerIdFor(key);

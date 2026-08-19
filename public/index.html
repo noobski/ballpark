@@ -119,7 +119,7 @@
     font-size: 1.7rem; font-weight: 800; letter-spacing: .02em; margin: 0 0 8px;
     overflow: hidden; padding: 4px 10px; word-break: break-all;
   }
-  .guess-display .placeholder { color: #3a3f78; font-size: 1.05rem; font-weight: 500; }
+  .guess-display .placeholder { color: var(--muted); font-size: .95rem; font-weight: 500; text-align: center; line-height: 1.3; }
 
   .keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
   .keypad button { padding: 11px 0; font-size: 1.2rem; background: var(--card2); color: var(--text); border-radius: 11px; user-select: none; }
@@ -276,7 +276,7 @@
     <div class="bar-wrap"><div class="bar" id="timer-arc"></div></div>
     <div class="num" id="timer-num">20</div>
   </div>
-  <div class="guess-display" id="guess-display"><span class="placeholder">type your guess…</span></div>
+  <div class="guess-display" id="guess-display"><span class="placeholder"></span></div>
   <div class="keypad" id="keypad">
     <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><button data-k="back" class="danger">⌫</button>
     <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><button data-k="clear" class="danger">C</button>
@@ -354,9 +354,9 @@
     if (!k) { k = 'k' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('ballpark_key', k); }
     return k;
   })();
-  // Remember which game we're in so a reload / reconnect can rejoin automatically
-  const rememberGame = (code) => { if (code) sessionStorage.setItem('ballpark_game', code); else sessionStorage.removeItem('ballpark_game'); };
-  const rememberedGame = () => sessionStorage.getItem('ballpark_game') || '';
+  // Remember which game we're in so a reload / reopen can rejoin automatically
+  const rememberGame = (code) => { if (code) localStorage.setItem('ballpark_game', code); else localStorage.removeItem('ballpark_game'); };
+  const rememberedGame = () => localStorage.getItem('ballpark_game') || '';
   let currentGuess = '';
   let currentUnit = '';
   let timerInterval = null;
@@ -491,11 +491,20 @@
     if (joinInput.value.length === 4) tryJoin();
   };
 
+  // If this device belongs to a game that's still going, jump straight back in
+  function resumeIfInGame() {
+    socket.emit('find_my_game', { key: deviceKey }, (res) => {
+      if (res && res.ok) tryResume(res.code);
+      else if (rememberedGame()) tryResume(rememberedGame()); // fallback (e.g. key mismatch)
+    });
+  }
+
   // First visit: ask for the name. Returning visitor: straight to home.
   if (savedName()) {
     showHome();
     if (urlCode && joinInput.value.length === 4) tryJoin(); // invite link + known name = instant join
-    else if (rememberedGame()) tryResume(rememberedGame()); // page was reloaded mid-game: jump back in
+    else if (socket.connected) resumeIfInGame();
+    else socket.once('connect', resumeIfInGame);
   } else {
     $('nick-input').value = funnyNick();
     show('screen-nick');
@@ -526,7 +535,10 @@
     });
   }
   socket.on('connect', () => {
-    if (hadConnection && me.code) tryResume(me.code); // came back after a drop: resume silently
+    if (hadConnection) {
+      if (me.code) tryResume(me.code);       // came back after a drop: resume silently
+      else if (savedName()) resumeIfInGame(); // sitting on home/final screen: check if a game wants us
+    }
     hadConnection = true;
   });
   function flashReconnected() {
@@ -601,8 +613,7 @@
     if (document.getElementById('screen-lobby').classList.contains('active')) renderLobby(lobby);
   });
   socket.on('player_joined_midgame', ({ nick }) => {
-    const note = $('answer-count');
-    if (note && $('screen-question').classList.contains('active')) note.textContent = `👋 ${nick} joined the game`;
+    if ($('screen-question').classList.contains('active')) $('answered-note').textContent = `👋 ${nick} joined the game`;
   });
 
   // ---------- question ----------
@@ -611,6 +622,7 @@
     answeredThisRound = false;
     currentGuess = '';
     currentUnit = data.unit;
+    waitingText = '';
     renderGuess();
     $('round-label').textContent = `Round ${data.round} of ${data.totalRounds}`;
     $('cat-chip').textContent = data.category;
@@ -668,10 +680,12 @@
     }, 250);
   }
 
+  // Status shown inside the guess box while it's empty (who we're waiting for, etc.)
+  let waitingText = '';
   function renderGuess() {
     sendDraft();
     const d = $('guess-display');
-    if (!currentGuess) { d.innerHTML = '<span class="placeholder">type your guess…</span>'; return; }
+    if (!currentGuess) { d.innerHTML = `<span class="placeholder">${escapeHtml(waitingText)}</span>`; return; }
     const num = Number(currentGuess);
     if (isYearUnit(currentUnit) || currentGuess.endsWith('.') || !isFinite(num)) d.textContent = currentGuess;
     else d.textContent = num.toLocaleString('en-US', { maximumFractionDigits: 10 });
@@ -711,6 +725,7 @@
     answeredThisRound = true;
     setKeypadEnabled(false);
     $('answered-note').textContent = `Locked in: ${fmt(value, currentUnit)} ✔`;
+    $('answer-count').textContent = waitingText;
     socket.emit('submit_answer', { value }, (res) => {
       if (!res || !res.ok) {
         $('answered-note').textContent = (res && res.error) || 'Could not submit.';
@@ -719,11 +734,13 @@
   }
 
   socket.on('answer_count', ({ answered, total, waitingFor }) => {
-    const el = $('answer-count');
     const w = (waitingFor || []).map((n) => (n === me.nick ? 'you' : n));
-    if (!w.length) el.textContent = 'Everyone answered ✔';
-    else if (w.length <= 3) el.textContent = `⏳ Waiting for: ${w.join(', ')}`;
-    else el.textContent = `⏳ Waiting for ${w.length} players`;
+    if (!w.length) waitingText = 'Everyone answered ✔';
+    else if (w.length <= 3) waitingText = `⏳ Waiting for: ${w.join(', ')}`;
+    else waitingText = `⏳ Waiting for ${w.length} players`;
+    // shown in the guess box while empty; once you've typed, it goes under the keypad
+    $('answer-count').textContent = currentGuess || answeredThisRound ? waitingText : '';
+    if (!currentGuess) renderGuess();
   });
 
   // ---------- results ----------
