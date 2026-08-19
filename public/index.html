@@ -348,6 +348,15 @@
   let me = { playerId: null, isHost: false, code: null, nick: '' };
   const savedName = () => localStorage.getItem('ballpark_name') || '';
   const setSavedName = (n) => localStorage.setItem('ballpark_name', n);
+  // Stable per-device identity: lets a dropped connection resume the same seat & score
+  const deviceKey = (() => {
+    let k = localStorage.getItem('ballpark_key');
+    if (!k) { k = 'k' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('ballpark_key', k); }
+    return k;
+  })();
+  // Remember which game we're in so a reload / reconnect can rejoin automatically
+  const rememberGame = (code) => { if (code) sessionStorage.setItem('ballpark_game', code); else sessionStorage.removeItem('ballpark_game'); };
+  const rememberedGame = () => sessionStorage.getItem('ballpark_game') || '';
   let currentGuess = '';
   let currentUnit = '';
   let timerInterval = null;
@@ -407,7 +416,7 @@
     if (b.disabled) return;
     b.disabled = true;
     b.textContent = '⏳ Creating your game…';
-    socket.emit('create_game', { nick: savedName() }, (res) => {
+    socket.emit('create_game', { nick: savedName(), key: deviceKey }, (res) => {
       b.disabled = false;
       b.textContent = '🚀 Create a new game';
       if (!res.ok) { $('home-error').textContent = res.error || 'Something went wrong.'; return; }
@@ -435,7 +444,7 @@
     $('code-entry').classList.add('joining');
     $('home-error').textContent = '';
     $('join-status').style.display = '';
-    socket.emit('join_game', { code, nick: savedName() }, (res) => {
+    socket.emit('join_game', { code, nick: savedName(), key: deviceKey }, (res) => {
       joining = false;
       $('code-entry').classList.remove('joining');
       $('join-status').style.display = 'none';
@@ -446,12 +455,7 @@
         return;
       }
       $('home-error').textContent = '';
-      onEnteredLobby(res, savedName());
-      if (res.inProgress) {
-        // Server is about to push the live round/results screen — show a brief note meanwhile
-        $('waiting-host-note').textContent = '🎮 Game in progress — jumping in for the next round…';
-        $('waiting-host-note').style.display = '';
-      }
+      onEnteredLobby(res, savedName()); // if in progress, the server pushes the live screen right after
     });
   }
   joinInput.addEventListener('input', () => {
@@ -491,6 +495,7 @@
   if (savedName()) {
     showHome();
     if (urlCode && joinInput.value.length === 4) tryJoin(); // invite link + known name = instant join
+    else if (rememberedGame()) tryResume(rememberedGame()); // page was reloaded mid-game: jump back in
   } else {
     $('nick-input').value = funnyNick();
     show('screen-nick');
@@ -498,10 +503,37 @@
 
   function onEnteredLobby(res, nick) {
     me = { playerId: res.playerId, isHost: res.isHost, code: res.code, nick };
+    rememberGame(res.code);
     $('me-chip-name').textContent = nick;
     $('me-chip').style.display = 'block';
     renderLobby(res.lobby);
-    show('screen-lobby');
+    // On resume mid-game the server immediately pushes the live screen; avoid a lobby flash
+    if (!res.inProgress) show('screen-lobby');
+  }
+
+  // ---------- auto-rejoin after a dropped connection or a page reload ----------
+  let hadConnection = false;
+  function tryResume(code) {
+    if (!code || !savedName()) return;
+    socket.emit('join_game', { code, nick: savedName(), key: deviceKey }, (res) => {
+      if (res && res.ok) {
+        onEnteredLobby(res, savedName());
+        if (res.resumed) flashReconnected();
+      } else {
+        rememberGame(null); // game is gone — forget it
+        if (me.code) { $('home-error').textContent = (res && res.error) || 'That game has ended.'; me.code = null; showHome(); }
+      }
+    });
+  }
+  socket.on('connect', () => {
+    if (hadConnection && me.code) tryResume(me.code); // came back after a drop: resume silently
+    hadConnection = true;
+  });
+  function flashReconnected() {
+    const chip = $('me-chip');
+    const prev = chip.textContent;
+    chip.textContent = '🔄 reconnected';
+    setTimeout(() => { chip.innerHTML = '<span class="lbl">you are</span><span id="me-chip-name">' + escapeHtml(savedName()) + '</span>'; }, 2000);
   }
 
   // ---------- lobby ----------
@@ -588,6 +620,14 @@
     $('answer-count').textContent = '';
     setKeypadEnabled(true);
     startTimer(data.endsAt, data.seconds);
+    // Resumed mid-round after already locking in: restore the locked state
+    if (data.lockedValue !== null && data.lockedValue !== undefined) {
+      answeredThisRound = true;
+      currentGuess = String(data.lockedValue);
+      renderGuess();
+      setKeypadEnabled(false);
+      $('answered-note').textContent = `Locked in: ${fmt(data.lockedValue, currentUnit)} ✔`;
+    }
     show('screen-question');
   });
 
@@ -799,6 +839,7 @@
 
   // ---------- final ----------
   socket.on('game_over', (data) => {
+    if (data.resumed) return renderFinal(data); // rejoined after the game ended: show final right away
     setTimeout(() => renderFinal(data), 4000); // give people a moment on last round results
   });
 
@@ -875,7 +916,7 @@
     socket.emit('play_again', {}, () => {});
     // new_game_lobby switches the screen; button resets on next final render
   };
-  $('btn-leave').onclick = () => location.href = location.pathname;
+  $('btn-leave').onclick = () => { rememberGame(null); location.href = location.pathname; };
 
   socket.on('new_game_lobby', (lobby) => {
     renderLobby(lobby);
@@ -883,9 +924,10 @@
   });
 
   socket.on('disconnect', () => {
-    // simple handling: show home with a note if we were in a game
+    // Stay on the current screen; socket.io auto-reconnects and 'connect' resumes the seat
     if (me.code) {
-      $('home-error').textContent = 'Connection lost. Refresh to rejoin a new game.';
+      const chip = $('me-chip');
+      chip.textContent = '📶 reconnecting…';
     }
   });
 

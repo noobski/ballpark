@@ -360,9 +360,31 @@ io.on('connection', (socket) => {
   let myGame = null;
   let myPlayerId = null;
 
-  socket.on('create_game', ({ nick }, cb) => {
+  // Player identity is a stable key the client keeps in its browser storage, NOT the
+  // socket id — so a dropped connection can be resumed with score & seat intact.
+  const playerIdFor = (key) => (key && String(key).slice(0, 64)) || socket.id;
+
+  // Push whatever screen the game is currently on to this socket (used for
+  // mid-game joins and for reconnects).
+  function sendCurrentScreen(game, playerId) {
+    if (game.state === 'question') {
+      const q = game.questions[game.round - 1];
+      socket.emit('round_start', {
+        round: game.round, totalRounds: ROUNDS_PER_GAME, category: q.cat, question: q.q,
+        unit: q.unit, seconds: ROUND_SECONDS, endsAt: game.roundEndsAt,
+        lockedValue: game.answers.has(playerId) ? game.answers.get(playerId) : null,
+      });
+      emitAnswerCount(game);
+    } else if (game.state === 'results' && game.lastRoundResults) {
+      socket.emit('round_results', { ...game.lastRoundResults, standings: standings(game) });
+    } else if (game.state === 'final') {
+      socket.emit('game_over', { standings: standings(game), history: game.roundHistory, crowdScore: game.crowdScore, code: game.code, resumed: true });
+    }
+  }
+
+  socket.on('create_game', ({ nick, key }, cb) => {
     const game = createGame();
-    const playerId = socket.id;
+    const playerId = playerIdFor(key);
     const player = { id: playerId, nick: sanitizeNick(nick), score: 0, connected: true, socketId: socket.id };
     game.players.set(playerId, player);
     game.hostId = playerId;
@@ -373,16 +395,38 @@ io.on('connection', (socket) => {
     emitLobby(game);
   });
 
-  socket.on('join_game', ({ code, nick }, cb) => {
+  socket.on('join_game', ({ code, nick, key }, cb) => {
     const game = games.get(String(code || '').trim().toUpperCase());
     if (!game) return cb && cb({ ok: false, error: 'Game not found. Check the code!' });
+    const cleanNick = sanitizeNick(nick);
+    const playerId = playerIdFor(key);
+
+    // ---- Reconnect / resume: same device key, OR same nickname whose seat is currently empty ----
+    const existing = game.players.get(playerId)
+      || [...game.players.values()].find((p) => !p.connected && p.nick.toLowerCase() === cleanNick.toLowerCase());
+    if (existing) {
+      if (existing.connected && existing.socketId !== socket.id && existing.id !== playerId) {
+        return cb && cb({ ok: false, error: 'That nickname is taken in this game. Pick another!' });
+      }
+      existing.connected = true;
+      existing.socketId = socket.id;
+      myGame = game;
+      myPlayerId = existing.id;
+      socket.join(game.code);
+      // if the host seat was handed off while they were away, they stay a regular player
+      cb && cb({ ok: true, code: game.code, playerId: existing.id, isHost: game.hostId === existing.id,
+        lobby: lobbyState(game), inProgress: game.state !== 'lobby', resumed: true });
+      emitLobby(game);
+      sendCurrentScreen(game, existing.id);
+      return;
+    }
+
+    // ---- Fresh join ----
     if (game.state === 'final') return cb && cb({ ok: false, error: 'This game just finished — wait for the host to start a new one.' });
     if (game.players.size >= 12) return cb && cb({ ok: false, error: 'Game is full (12 players max).' });
-    const cleanNick = sanitizeNick(nick);
     if ([...game.players.values()].some((p) => p.nick.toLowerCase() === cleanNick.toLowerCase())) {
       return cb && cb({ ok: false, error: 'That nickname is taken in this game. Pick another!' });
     }
-    const playerId = socket.id;
     game.players.set(playerId, { id: playerId, nick: cleanNick, score: 0, connected: true, socketId: socket.id });
     myGame = game;
     myPlayerId = playerId;
@@ -390,16 +434,7 @@ io.on('connection', (socket) => {
     const inProgress = game.state !== 'lobby';
     cb && cb({ ok: true, code: game.code, playerId, isHost: false, lobby: lobbyState(game), inProgress });
     emitLobby(game);
-    // Joined mid-game: catch them up with the current screen
-    if (game.state === 'question') {
-      const q = game.questions[game.round - 1];
-      socket.emit('round_start', {
-        round: game.round, totalRounds: ROUNDS_PER_GAME, category: q.cat, question: q.q,
-        unit: q.unit, seconds: ROUND_SECONDS, endsAt: game.roundEndsAt,
-      });
-    } else if (game.state === 'results' && game.lastRoundResults) {
-      socket.emit('round_results', { ...game.lastRoundResults, standings: standings(game) });
-    }
+    sendCurrentScreen(game, playerId);
     if (inProgress) io.to(game.code).emit('player_joined_midgame', { nick: cleanNick });
   });
 
@@ -460,21 +495,29 @@ io.on('connection', (socket) => {
     if (!game) return;
     const p = game.players.get(myPlayerId);
     if (!p) return;
+    // Stale disconnect: this player already came back on a newer socket — ignore
+    if (p.socketId !== socket.id) return;
+    p.connected = false;
     if (game.state === 'lobby') {
-      game.players.delete(myPlayerId);
-      // Host left in lobby: pass host to next player or delete empty game
-      if (game.hostId === myPlayerId) {
-        const next = game.players.values().next().value;
-        if (next) game.hostId = next.id;
-        else {
-          clearTimeout(game.roundTimer);
-          clearTimeout(game.advanceTimer);
-          games.delete(game.code);
-          return;
+      // Keep the seat for 90s so a flaky connection can resume; then drop it
+      setTimeout(() => {
+        if (!games.has(game.code) || game.state !== 'lobby') return;
+        const still = game.players.get(myPlayerId);
+        if (!still || still.connected) return;
+        game.players.delete(myPlayerId);
+        if (game.hostId === myPlayerId) {
+          const next = [...game.players.values()].find((x) => x.connected) || game.players.values().next().value;
+          if (next) game.hostId = next.id;
+          else { clearTimeout(game.roundTimer); clearTimeout(game.advanceTimer); games.delete(game.code); return; }
         }
+        emitLobby(game);
+      }, 90 * 1000);
+      // Host dropped in lobby: hand host to someone connected right away so the game isn't stuck
+      if (game.hostId === myPlayerId) {
+        const next = [...game.players.values()].find((x) => x.connected);
+        if (next) game.hostId = next.id;
       }
     } else {
-      p.connected = false;
       // Pass host if host dropped mid-game
       if (game.hostId === myPlayerId) {
         const next = [...game.players.values()].find((x) => x.connected);
