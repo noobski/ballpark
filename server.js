@@ -501,6 +501,38 @@ io.on('connection', (socket) => {
     emitLobby(game);
   });
 
+  // Backing out of a game on purpose — e.g. a host who created a code by mistake
+  // and wants to join someone else's game instead. Unlike a disconnect (which
+  // holds the seat for 90s in case they come back), this frees the seat now, so
+  // find_my_game won't drag the device straight back into the game it just left.
+  socket.on('leave_game', (_, cb) => {
+    const game = myGame;
+    const playerId = myPlayerId;
+    myGame = null;
+    myPlayerId = null;
+    if (!game) return cb && cb({ ok: true });
+    socket.leave(game.code);
+    if (!game.players.delete(playerId)) return cb && cb({ ok: true });
+    game.answers.delete(playerId);
+    game.drafts.delete(playerId);
+    cb && cb({ ok: true });
+
+    // Last one out closes the room
+    if (game.players.size === 0) {
+      clearTimeout(game.roundTimer);
+      clearTimeout(game.advanceTimer);
+      games.delete(game.code);
+      return;
+    }
+    // Host walked out: hand the room to whoever is still here
+    if (game.hostId === playerId) {
+      const next = [...game.players.values()].find((x) => x.connected) || game.players.values().next().value;
+      game.hostId = next.id;
+    }
+    emitLobby(game);
+    if (game.state === 'question') { emitAnswerCount(game); maybeEndEarly(game); }
+  });
+
   socket.on('disconnect', () => {
     const game = myGame;
     if (!game) return;

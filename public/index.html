@@ -263,6 +263,7 @@
   <button id="btn-start" style="display:none">▶️ Start game (10 rounds)</button>
   <div class="hint" id="waiting-host-note" style="display:none">Waiting for the host to start the game…</div>
   <div class="error" id="lobby-error"></div>
+  <button class="ghost" id="btn-leave-lobby">← Back to menu</button>
 </div>
 
 <!-- QUESTION -->
@@ -607,6 +608,24 @@
       }
       // on success round_start switches the screen; button resets in renderLobby
     });
+  };
+
+  // Leave the lobby and go back to the main menu — for the host who created a code
+  // by mistake and actually wants to join someone else's game. The server frees the
+  // seat straight away, so the device isn't auto-rejoined into the game it just left.
+  $('btn-leave-lobby').onclick = () => {
+    const b = $('btn-leave-lobby');
+    if (b.disabled) return;
+    b.disabled = true;
+    socket.emit('leave_game', {}, () => { b.disabled = false; });
+    me = { playerId: null, isHost: false, code: null, nick: '' };
+    rememberGame(null);
+    $('lobby-error').textContent = '';
+    $('home-error').textContent = '';
+    joinInput.value = '';
+    renderCodeSquares();
+    showHome();
+    setTimeout(() => { b.disabled = false; }, 1500); // don't get stuck if the ack is lost
   };
 
   socket.on('lobby_update', (lobby) => {
