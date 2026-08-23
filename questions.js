@@ -618,6 +618,7 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 const Y = require('./data/years');
 const N = require('./data/numbers');
 const STATIC_EXTRA = require('./data/static-extra');
+const FACTS = require('./data/facts');
 
 function buildQuestions() {
   const qs = [];
@@ -721,17 +722,91 @@ function buildQuestions() {
 
 const QUESTIONS = buildQuestions();
 
+// ---------------------------------------------------------------------------
+// Most of the ~1,000 hand-written STATIC / STATIC_EXTRA questions were never
+// tagged with a `subject` for image lookup — going through and tagging each
+// one by hand isn't practical. Instead, guess a subject straight from the
+// question text: find the longest run of capitalized words (allowing a few
+// lowercase "connector" words like "of"/"the" in the middle, e.g. "Battle of
+// Hastings"), skipping the sentence-initial interrogative word so "How"/
+// "What"/"In" etc. never get mistaken for the subject themselves. This turns
+// "How many hours did the Battle of Hastings last?" into "Battle of
+// Hastings" and "How many people fit in Madison Square Garden (basketball)?"
+// into "Madison Square Garden" — both genuine, lookup-able Wikipedia titles.
+// Purely generic/numeric facts with no proper noun (e.g. "What is the speed
+// of light?") correctly find nothing and fall back to the category icon.
+const QUESTION_STOP_WORDS = new Set([
+  'how', 'what', 'why', 'who', 'whom', 'which', 'in', 'at', 'around', 'do',
+  'does', 'did', 'is', 'was', 'were', 'will', 'can', 'could', 'would',
+  'should', 'has', 'have', 'had', 'are',
+]);
+const QUESTION_CONNECTORS = new Set(['of', 'the', 'in', 'on', 'at', 'to', 'and', 'for', 'de', 'van', 'del', 'della', 'di', 'la', 'le', 'a', 'an']);
+
+function bareWord(tok) {
+  return tok.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '');
+}
+
+function guessSubject(text) {
+  if (!text) return null;
+  const words = text.replace(/\?+\s*$/, '').split(/\s+/).filter(Boolean);
+  let best = [];
+  let current = [];
+  const flush = () => {
+    while (current.length && QUESTION_CONNECTORS.has(bareWord(current[current.length - 1]).toLowerCase())) current.pop();
+    if (current.length && (current.length > best.length ||
+        (current.length === best.length && current.join(' ').length > best.join(' ').length))) {
+      best = current.slice();
+    }
+    current = [];
+  };
+  for (const w of words) {
+    const bare = bareWord(w);
+    const lower = bare.toLowerCase();
+    if (bare && /^[A-Z]/.test(bare) && !QUESTION_STOP_WORDS.has(lower)) {
+      current.push(w);
+    } else if (current.length && QUESTION_CONNECTORS.has(lower)) {
+      current.push(w);
+    } else {
+      flush();
+    }
+  }
+  flush();
+  if (!best.length) return null;
+  const subject = best.map(bareWord).join(' ').replace(/['’]s$/, '').trim();
+  return subject || null;
+}
+
+// Names we already know are people (from the generator lists above, which
+// carry an explicit isPerson: true) — used so a hand-written question that
+// happens to mention one of them (e.g. "How tall was Napoleon?") also gets
+// the "person" fallback emoji, without needing to tag every STATIC entry.
+const PERSON_NAMES = new Set(
+  [...AGES, ...N.MORE_AGES].map(([n]) => n)
+    .concat(NET_WORTH.map(([n]) => n))
+    .concat(Y.PRESIDENTS.map(([n]) => n))
+    .concat(Y.DEATHS.map(([n]) => n))
+    .map((n) => n.replace(/\s*\([^)]*\)\s*/g, '').trim())
+);
+
 // Resolve a question into a concrete {cat, q, a, unit} at game time
 function resolveQuestion(entry) {
+  const subject = entry.subject || guessSubject(entry.q);
+  const isPerson = !!entry.isPerson ||
+    (entry.cat === 'People' && !!subject) ||
+    (!!subject && PERSON_NAMES.has(subject));
+  // One-sentence "did you know" fact to show alongside the subject's photo —
+  // precomputed once (see data/facts.js) rather than generated live, so there's
+  // no extra latency or API cost mid-game.
+  const fact = (subject && FACTS[subject]) || null;
   if (entry.birth) {
     const b = new Date(entry.birth + 'T00:00:00Z');
     const now = new Date();
     let age = now.getUTCFullYear() - b.getUTCFullYear();
     const m = now.getUTCMonth() - b.getUTCMonth();
     if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--;
-    return { cat: entry.cat, q: entry.q, a: age, unit: entry.unit, subject: entry.subject, isPerson: !!entry.isPerson };
+    return { cat: entry.cat, q: entry.q, a: age, unit: entry.unit, subject, isPerson, fact };
   }
-  return { cat: entry.cat, q: entry.q, a: entry.a, unit: entry.unit, subject: entry.subject, isPerson: !!entry.isPerson };
+  return { cat: entry.cat, q: entry.q, a: entry.a, unit: entry.unit, subject, isPerson, fact };
 }
 
 // Pick n questions purely at random (capped at 2 per category so one game

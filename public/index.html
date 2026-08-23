@@ -135,17 +135,32 @@
     .guess-display { min-height: 42px; font-size: 1.4rem; }
   }
 
-  /* Once locked in, the keypad is replaced by a picture related to the question */
+  /* Once locked in, the keypad is replaced by a picture related to the question.
+     We never crop the photo itself (object-fit: cover kept guessing wrong and
+     clipping faces/heads) — instead the full image is always shown in full
+     (object-fit: contain), sitting on a blurred, zoomed-in copy of the same
+     image so there's no empty letterboxing around it. */
   .q-image {
-    display: none; background: #12143a; border-radius: 14px; overflow: hidden;
+    display: none; position: relative; background: #12143a; border-radius: 14px; overflow: hidden;
     min-height: 170px; max-height: 260px; flex: 1;
     align-items: center; justify-content: center;
   }
-  .q-image img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
-  /* Portraits are usually taller than our wide box, so a centered crop clips the
-     head — bias toward the top so the face stays in frame instead of the torso. */
-  .q-image.person img { object-position: center 15%; }
-  .q-image .no-img { color: var(--muted); font-size: 2.6rem; }
+  .q-image .bg {
+    position: absolute; inset: 0; background-size: cover; background-position: center;
+    filter: blur(24px) brightness(.55); transform: scale(1.15);
+  }
+  .q-image img { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; display: block; }
+  .q-image .no-img { position: relative; z-index: 1; color: var(--muted); font-size: 2.6rem; }
+  /* Shorter variant used on the results screen, where table + podium already take space */
+  .q-image.small { min-height: 110px; max-height: 150px; }
+
+  /* One-sentence "did you know" caption shown under the photo */
+  .fact-caption {
+    display: none; text-align: center; color: var(--muted); font-size: .85rem;
+    line-height: 1.4; margin-top: 8px; padding: 0 4px;
+  }
+  .fact-caption.show { display: block; }
+  .fact-caption b { color: var(--text); }
 
   /* exit-to-home link at the bottom of in-game screens */
   .exit-btn { background: transparent; color: var(--muted); font-weight: 500; font-size: .82rem; padding: 8px 0 2px; width: auto; display: block; margin: 6px auto 0; }
@@ -218,6 +233,7 @@
   .recap-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 5px; font-size: .85rem; color: var(--muted); }
   .recap-stats b { color: var(--text); }
   .recap-stats .real b { color: var(--accent); }
+  .recap-fact { margin-top: 5px; font-size: .82rem; color: var(--muted); line-height: 1.4; }
   .spacer { flex: 1; }
   @media (max-height: 700px) {
     .logo { margin: 12px 0 4px; font-size: 1.9rem; }
@@ -305,6 +321,7 @@
     <button data-k="submit" class="submit" id="btn-submit">Lock it in 🔒</button>
   </div>
   <div class="q-image" id="q-image"></div>
+  <div class="fact-caption" id="q-fact"></div>
   <div class="answered-note" id="answered-note"></div>
   <div class="answer-count" id="answer-count"></div>
   <button class="ghost exit-btn" data-exit>🚪 Exit</button>
@@ -327,6 +344,11 @@
   <div class="card">
     <div class="mini-podium" id="mini-podium"></div>
     <div class="you-line" id="you-line" style="display:none"></div>
+  </div>
+
+  <div class="card" id="res-fact-card" style="display:none">
+    <div class="q-image small" id="res-image"></div>
+    <div class="fact-caption" id="res-fact"></div>
   </div>
 
   <button id="btn-next" style="display:none">Next round →</button>
@@ -384,6 +406,7 @@
   let currentUnit = '';
   let currentImageUrl = null;
   let currentIsPerson = false;
+  let currentFact = null;
   let timerInterval = null;
   let answeredThisRound = false;
 
@@ -687,6 +710,7 @@
     currentUnit = data.unit;
     currentImageUrl = data.image || null;
     currentIsPerson = !!data.isPerson;
+    currentFact = data.fact || null;
     $('waiting-line').textContent = '';
     renderGuess();
     $('round-label').textContent = `Round ${data.round} of ${data.totalRounds}`;
@@ -710,6 +734,38 @@
     show('screen-question');
   });
 
+  // Fill a .q-image box with a photo (blurred backdrop + full image, never
+  // cropped) or a category-emoji fallback. Shared by the question screen
+  // (once locked in) and the results screen (between rounds).
+  function renderPicBox(box, url, isPerson, catText) {
+    const fallbackEmoji = () => isPerson ? '🧑' : (CATEGORY_EMOJI[catText] || '🤔');
+    if (url) {
+      box.innerHTML = '';
+      const bg = document.createElement('div');
+      bg.className = 'bg';
+      bg.style.backgroundImage = `url("${url}")`;
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      img.onerror = () => { box.innerHTML = `<div class="no-img">${fallbackEmoji()}</div>`; };
+      box.appendChild(bg);
+      box.appendChild(img);
+    } else {
+      box.innerHTML = `<div class="no-img">${fallbackEmoji()}</div>`;
+    }
+  }
+
+  // Set (or hide) a fact-caption element, e.g. "Did you know: ..."
+  function renderFactCaption(el, fact) {
+    if (fact) {
+      el.innerHTML = `<b>Did you know?</b> ${escapeHtml(fact)}`;
+      el.classList.add('show');
+    } else {
+      el.textContent = '';
+      el.classList.remove('show');
+    }
+  }
+
   // Once a player locks in an answer, the keypad is no longer needed — swap it
   // for a picture related to the question (when we have one) while they wait.
   function updateKeypadOrImage() {
@@ -717,22 +773,13 @@
     if (!answeredThisRound) {
       $('keypad').style.display = '';
       box.style.display = 'none';
+      renderFactCaption($('q-fact'), null);
       return;
     }
     $('keypad').style.display = 'none';
     box.style.display = 'flex';
-    box.classList.toggle('person', currentIsPerson);
-    const fallbackEmoji = () => currentIsPerson ? '🧑' : (CATEGORY_EMOJI[$('cat-chip').textContent] || '🤔');
-    if (currentImageUrl) {
-      box.innerHTML = '';
-      const img = document.createElement('img');
-      img.src = currentImageUrl;
-      img.alt = '';
-      img.onerror = () => { box.innerHTML = `<div class="no-img">${fallbackEmoji()}</div>`; };
-      box.appendChild(img);
-    } else {
-      box.innerHTML = `<div class="no-img">${fallbackEmoji()}</div>`;
-    }
+    renderPicBox(box, currentImageUrl, currentIsPerson, $('cat-chip').textContent);
+    renderFactCaption($('q-fact'), currentFact);
   }
 
   function startTimer(endsAt, totalSeconds) {
@@ -842,6 +889,12 @@
     $('res-question').textContent = data.question;
     $('res-answer').textContent = fmt(data.answer, data.unit);
     $('res-unit').textContent = data.unit;
+
+    // Picture + "did you know" fact, kept up during the scoreboard so players
+    // can reference it between rounds.
+    $('res-fact-card').style.display = '';
+    renderPicBox($('res-image'), data.image || null, !!data.isPerson, data.category);
+    renderFactCaption($('res-fact'), data.fact || null);
 
     // Build display rows: real players + the crowd's average slotted in by closeness
     const rows = data.results.map((r) => ({ ...r, isAvg: false }));
@@ -1001,10 +1054,9 @@
         <div class="recap-cat">R${h.round} · ${escapeHtml(h.category)}</div>
         <div class="recap-q">${escapeHtml(h.question)}</div>
         <div class="recap-stats">
-          <span class="real">Real: <b>${fmt(h.answer, h.unit)}</b> ${escapeHtml(h.unit)}</span>
-          <span>Avg: <b>${fmt(h.average, h.unit)}</b></span>
-          <span>Median: <b>${fmt(h.median, h.unit)}</b></span>
-        </div>`;
+          <span class="real">Answer: <b>${fmt(h.answer, h.unit)}</b> ${escapeHtml(h.unit)}</span>
+        </div>
+        ${h.fact ? `<div class="recap-fact">💡 ${escapeHtml(h.fact)}</div>` : ''}`;
       recap.appendChild(div);
     });
     $('btn-play-again').style.display = me.isHost ? '' : 'none';

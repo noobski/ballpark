@@ -199,6 +199,7 @@ async function startRound(game) {
     endsAt: game.roundEndsAt,
     image,
     isPerson: !!q.isPerson,
+    fact: q.fact || null,
   });
 
   clearTimeout(game.roundTimer);
@@ -320,6 +321,7 @@ function endRound(game) {
     answer,
     average: avg,
     median: med,
+    fact: q.fact || null,
   });
 
   game.lastRoundResults = {
@@ -341,6 +343,9 @@ function endRound(game) {
     isFinal,
     autoAdvanceSeconds: isFinal ? null : RESULTS_AUTO_ADVANCE_SECONDS,
     resultsEndsAt: isFinal ? null : Date.now() + RESULTS_AUTO_ADVANCE_SECONDS * 1000,
+    image: game.currentImage,
+    isPerson: !!q.isPerson,
+    fact: q.fact || null,
   };
 
   io.to(game.code).emit('round_results', game.lastRoundResults);
@@ -396,7 +401,7 @@ io.on('connection', (socket) => {
       socket.emit('round_start', {
         round: game.round, totalRounds: ROUNDS_PER_GAME, category: q.cat, question: q.q,
         unit: q.unit, seconds: ROUND_SECONDS, endsAt: game.roundEndsAt,
-        image: game.currentImage, isPerson: !!q.isPerson,
+        image: game.currentImage, isPerson: !!q.isPerson, fact: q.fact || null,
         lockedValue: game.answers.has(playerId) ? game.answers.get(playerId) : null,
       });
       emitAnswerCount(game);
