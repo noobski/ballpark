@@ -649,11 +649,11 @@ function buildQuestions() {
   }
 
   for (const [name, birth] of [...AGES, ...N.MORE_AGES]) {
-    qs.push({ cat: 'People', q: `How old is ${name}?`, birth, unit: 'years', subject: name });
+    qs.push({ cat: 'People', q: `How old is ${name}?`, birth, unit: 'years', subject: name, isPerson: true });
   }
 
   for (const [name, b] of NET_WORTH) {
-    qs.push({ cat: 'People', q: `What is ${name}'s estimated net worth (in US dollars)?`, a: Math.round(b * 1e9), unit: 'US$', subject: name });
+    qs.push({ cat: 'People', q: `What is ${name}'s estimated net worth (in US dollars)?`, a: Math.round(b * 1e9), unit: 'US$', subject: name, isPerson: true });
   }
 
   // ---- Year generators ----
@@ -662,11 +662,11 @@ function buildQuestions() {
   for (const [t, y] of Y.TV_SHOWS) qs.push({ cat: 'Movies & TV', q: `In what year did "${t}" first air on TV?`, a: y, unit: 'year', subject: `${t} (TV series)` });
   for (const [b, y] of Y.BOOKS) qs.push({ cat: 'Books & Literature', q: `In what year was "${b}" published?`, a: y, unit: 'year', subject: b });
   for (const [i, y] of Y.INVENTIONS) qs.push({ cat: 'Science & Nature', q: `In what year was ${i} invented/introduced?`, a: y, unit: 'year', subject: i });
-  for (const [p, y] of Y.PRESIDENTS) qs.push({ cat: 'History', q: `In what year did ${p} become US president?`, a: y, unit: 'year', subject: p });
+  for (const [p, y] of Y.PRESIDENTS) qs.push({ cat: 'History', q: `In what year did ${p} become US president?`, a: y, unit: 'year', subject: p, isPerson: true });
   for (const [c, y] of Y.OLYMPICS) qs.push({ cat: 'Sports', q: `In what year did ${c} host the Summer Olympics?`, a: y, unit: 'year', subject: c });
   for (const [c, y] of Y.WORLD_CUPS) qs.push({ cat: 'Sports', q: `In what year did ${c} host the FIFA World Cup?`, a: y, unit: 'year', subject: c });
   for (const [c, y] of Y.INDEPENDENCE) qs.push({ cat: 'History', q: `In what year did ${c} become independent / founded as a modern state?`, a: y, unit: 'year', subject: c });
-  for (const [p, y] of Y.DEATHS) qs.push({ cat: 'History', q: `In what year did ${p} die?`, a: y, unit: 'year', subject: p });
+  for (const [p, y] of Y.DEATHS) qs.push({ cat: 'History', q: `In what year did ${p} die?`, a: y, unit: 'year', subject: p, isPerson: true });
   for (const [w, y] of Y.WARS) qs.push({ cat: 'History', q: `In what year did ${w} begin?`, a: y, unit: 'year', subject: w });
   for (const [g, y] of Y.VIDEO_GAMES) qs.push({ cat: 'Video Games', q: `In what year was ${g} released?`, a: y, unit: 'year', subject: `${g} (video game)` });
   for (const [a, y] of Y.ALBUMS) qs.push({ cat: 'Music', q: `In what year was the album "${a}" released?`, a: y, unit: 'year', subject: `${a} (album)` });
@@ -729,9 +729,9 @@ function resolveQuestion(entry) {
     let age = now.getUTCFullYear() - b.getUTCFullYear();
     const m = now.getUTCMonth() - b.getUTCMonth();
     if (m < 0 || (m === 0 && now.getUTCDate() < b.getUTCDate())) age--;
-    return { cat: entry.cat, q: entry.q, a: age, unit: entry.unit, subject: entry.subject };
+    return { cat: entry.cat, q: entry.q, a: age, unit: entry.unit, subject: entry.subject, isPerson: !!entry.isPerson };
   }
-  return { cat: entry.cat, q: entry.q, a: entry.a, unit: entry.unit, subject: entry.subject };
+  return { cat: entry.cat, q: entry.q, a: entry.a, unit: entry.unit, subject: entry.subject, isPerson: !!entry.isPerson };
 }
 
 // Pick n questions purely at random (capped at 2 per category so one game

@@ -198,6 +198,7 @@ async function startRound(game) {
     seconds: ROUND_SECONDS,
     endsAt: game.roundEndsAt,
     image,
+    isPerson: !!q.isPerson,
   });
 
   clearTimeout(game.roundTimer);
@@ -395,7 +396,7 @@ io.on('connection', (socket) => {
       socket.emit('round_start', {
         round: game.round, totalRounds: ROUNDS_PER_GAME, category: q.cat, question: q.q,
         unit: q.unit, seconds: ROUND_SECONDS, endsAt: game.roundEndsAt,
-        image: game.currentImage,
+        image: game.currentImage, isPerson: !!q.isPerson,
         lockedValue: game.answers.has(playerId) ? game.answers.get(playerId) : null,
       });
       emitAnswerCount(game);

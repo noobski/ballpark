@@ -141,7 +141,10 @@
     min-height: 170px; max-height: 260px; flex: 1;
     align-items: center; justify-content: center;
   }
-  .q-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .q-image img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
+  /* Portraits are usually taller than our wide box, so a centered crop clips the
+     head — bias toward the top so the face stays in frame instead of the torso. */
+  .q-image.person img { object-position: center 15%; }
   .q-image .no-img { color: var(--muted); font-size: 2.6rem; }
 
   /* exit-to-home link at the bottom of in-game screens */
@@ -380,6 +383,7 @@
   let currentGuess = '';
   let currentUnit = '';
   let currentImageUrl = null;
+  let currentIsPerson = false;
   let timerInterval = null;
   let answeredThisRound = false;
 
@@ -682,6 +686,7 @@
     currentGuess = '';
     currentUnit = data.unit;
     currentImageUrl = data.image || null;
+    currentIsPerson = !!data.isPerson;
     $('waiting-line').textContent = '';
     renderGuess();
     $('round-label').textContent = `Round ${data.round} of ${data.totalRounds}`;
@@ -716,15 +721,17 @@
     }
     $('keypad').style.display = 'none';
     box.style.display = 'flex';
+    box.classList.toggle('person', currentIsPerson);
+    const fallbackEmoji = () => currentIsPerson ? '🧑' : (CATEGORY_EMOJI[$('cat-chip').textContent] || '🤔');
     if (currentImageUrl) {
       box.innerHTML = '';
       const img = document.createElement('img');
       img.src = currentImageUrl;
       img.alt = '';
-      img.onerror = () => { box.innerHTML = `<div class="no-img">${CATEGORY_EMOJI[$('cat-chip').textContent] || '🤔'}</div>`; };
+      img.onerror = () => { box.innerHTML = `<div class="no-img">${fallbackEmoji()}</div>`; };
       box.appendChild(img);
     } else {
-      box.innerHTML = `<div class="no-img">${CATEGORY_EMOJI[$('cat-chip').textContent] || '🤔'}</div>`;
+      box.innerHTML = `<div class="no-img">${fallbackEmoji()}</div>`;
     }
   }
 

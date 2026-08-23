@@ -21,6 +21,7 @@ const mk = () => io(URL, { transports: ['websocket'] });
   await emitAck(a, 'start_game', {});
   const rs = await sp;
   check('image' in rs, `round_start includes an "image" key (value: ${rs.image === null ? 'null' : typeof rs.image})`);
+  check(typeof rs.isPerson === 'boolean', `round_start includes a boolean "isPerson" key (got: ${typeof rs.isPerson})`);
   [a, b].forEach((s) => s.close());
 
   // ---- leave_game: lobby seat freed immediately ----
