@@ -738,6 +738,7 @@
   // cropped) or a category-emoji fallback. Shared by the question screen
   // (once locked in) and the results screen (between rounds).
   function renderPicBox(box, url, isPerson, catText) {
+    box.style.display = 'flex'; // base .q-image CSS defaults to display:none
     const fallbackEmoji = () => isPerson ? '🧑' : (CATEGORY_EMOJI[catText] || '🤔');
     if (url) {
       box.innerHTML = '';
