@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { pickQuestions } = require('./questions');
+const { getImage, prewarm } = require('./images');
 
 const app = express();
 const server = http.createServer(app);
@@ -121,6 +122,7 @@ function createGame() {
     roundTimer: null,
     advanceTimer: null,
     lastRoundResults: null,
+    currentImage: null, // image URL for the question currently in play (or null)
     createdAt: Date.now(),
   };
   games.set(code, game);
@@ -158,14 +160,34 @@ function median(nums) {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-function startRound(game) {
+async function startRound(game) {
+  if (game._advancing) return; // guard against a double-fire (e.g. host double-tapping next)
+  game._advancing = true;
   clearTimeout(game.advanceTimer);
-  game.round++;
+  const round = game.round + 1;
+  const q = game.questions[round - 1];
+
+  // Resolve the question's image (usually already cached from the prewarm
+  // kicked off when the game's questions were picked). Capped wait so a slow
+  // or unreachable image host never delays the round for players.
+  let image = null;
+  if (q.subject) {
+    image = await Promise.race([
+      getImage(q.subject).catch(() => null),
+      new Promise((resolve) => setTimeout(() => resolve(null), 1800)),
+    ]);
+  }
+
+  // Game may have been deleted (e.g. everyone left) while we were awaiting
+  if (!games.has(game.code)) { game._advancing = false; return; }
+
+  game.round = round;
   game.state = 'question';
   game.answers = new Map();
   game.drafts = new Map();
-  const q = game.questions[game.round - 1];
   game.roundEndsAt = Date.now() + ROUND_SECONDS * 1000;
+  game.currentImage = image;
+  game._advancing = false;
 
   io.to(game.code).emit('round_start', {
     round: game.round,
@@ -175,6 +197,7 @@ function startRound(game) {
     unit: q.unit,
     seconds: ROUND_SECONDS,
     endsAt: game.roundEndsAt,
+    image,
   });
 
   clearTimeout(game.roundTimer);
@@ -372,6 +395,7 @@ io.on('connection', (socket) => {
       socket.emit('round_start', {
         round: game.round, totalRounds: ROUNDS_PER_GAME, category: q.cat, question: q.q,
         unit: q.unit, seconds: ROUND_SECONDS, endsAt: game.roundEndsAt,
+        image: game.currentImage,
         lockedValue: game.answers.has(playerId) ? game.answers.get(playerId) : null,
       });
       emitAnswerCount(game);
@@ -457,6 +481,7 @@ io.on('connection', (socket) => {
     // Avoid anything asked in any game (global ledger) plus this group's own history
     game.questions = pickQuestions(ROUNDS_PER_GAME, new Set([...askedGlobal, ...game.usedQuestionTexts]));
     markAsked(game.questions);
+    prewarm(game.questions.map((q) => q.subject)); // start fetching all 10 images now
     cb && cb({ ok: true });
     io.to(game.code).emit('game_started', {});
     startRound(game);

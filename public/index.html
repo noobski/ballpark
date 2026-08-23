@@ -105,6 +105,7 @@
   .question-text { text-align: center; font-size: 1.3rem; font-weight: 700; margin: 8px 4px 2px; line-height: 1.3; }
   .unit-label { text-align: center; color: var(--muted); font-size: .85rem; margin-bottom: 4px; }
 
+  .waiting-line { text-align: center; color: var(--muted); font-size: .85rem; min-height: 1.2em; margin-top: 2px; }
   /* slim timer: number + shrinking bar */
   .timer-line { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
   .timer-line .bar-wrap { flex: 1; height: 10px; background: #2c3070; border-radius: 999px; overflow: hidden; }
@@ -133,6 +134,20 @@
     .keypad button { padding: 8px 0; font-size: 1.05rem; }
     .guess-display { min-height: 42px; font-size: 1.4rem; }
   }
+
+  /* Once locked in, the keypad is replaced by a picture related to the question */
+  .q-image {
+    display: none; background: #12143a; border-radius: 14px; overflow: hidden;
+    min-height: 170px; max-height: 260px; flex: 1;
+    align-items: center; justify-content: center;
+  }
+  .q-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .q-image .no-img { color: var(--muted); font-size: 2.6rem; }
+
+  /* exit-to-home link at the bottom of in-game screens */
+  .exit-btn { background: transparent; color: var(--muted); font-weight: 500; font-size: .82rem; padding: 8px 0 2px; width: auto; display: block; margin: 6px auto 0; }
+  .exit-btn:active { transform: none; opacity: .6; }
+  #screen-question .exit-btn { padding: 4px 0 0; font-size: .75rem; }
 
   /* Results */
   .big-answer { text-align: center; font-size: 2.2rem; font-weight: 800; color: var(--accent); margin: 4px 0 2px; }
@@ -273,6 +288,7 @@
     <div class="question-text" id="question-text"></div>
     <div class="unit-label" id="unit-label"></div>
   </div>
+  <div class="waiting-line" id="waiting-line"></div>
   <div class="timer-line" id="timer-ring">
     <div class="bar-wrap"><div class="bar" id="timer-arc"></div></div>
     <div class="num" id="timer-num">20</div>
@@ -285,8 +301,10 @@
     <button data-k="0" class="zero">0</button><button data-k="000">000</button><button data-k=".">.</button>
     <button data-k="submit" class="submit" id="btn-submit">Lock it in 🔒</button>
   </div>
+  <div class="q-image" id="q-image"></div>
   <div class="answered-note" id="answered-note"></div>
   <div class="answer-count" id="answer-count"></div>
+  <button class="ghost exit-btn" data-exit>🚪 Exit</button>
 </div>
 
 <!-- RESULTS -->
@@ -310,6 +328,7 @@
 
   <button id="btn-next" style="display:none">Next round →</button>
   <div class="advance-wrap" id="advance-wrap"><div class="advance-bar" id="advance-bar"></div></div>
+  <button class="ghost exit-btn" data-exit>🚪 Exit to home</button>
 </div>
 
 <!-- FINAL -->
@@ -328,7 +347,7 @@
   </div>
   <button id="btn-play-again" style="display:none">🔁 Play again (same crew)</button>
   <div class="hint" id="final-waiting" style="display:none">Waiting for the host to start a new game…</div>
-  <button class="ghost" id="btn-leave">Leave game</button>
+  <button class="ghost exit-btn" data-exit>🚪 Exit to home</button>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -360,8 +379,29 @@
   const rememberedGame = () => localStorage.getItem('ballpark_game') || '';
   let currentGuess = '';
   let currentUnit = '';
+  let currentImageUrl = null;
   let timerInterval = null;
   let answeredThisRound = false;
+
+  const CATEGORY_EMOJI = {
+    'Geography': '🌍', 'People': '🧑', 'History': '📜', 'Science & Nature': '🔬',
+    'Animals': '🐾', 'Sports': '🏅', 'Movies & TV': '🎬', 'Music': '🎵',
+    'Food & Drink': '🍔', 'Business & Tech': '💼', 'Books & Literature': '📚',
+    'Video Games': '🎮', 'Space': '🚀', 'Language & Words': '🗣️',
+    'Health & Body': '🫀', 'Random & Weird': '🤔',
+  };
+
+  // ---------- exit to home (any in-game screen) ----------
+  function exitToHome() {
+    const done = () => { rememberGame(null); location.href = location.pathname; };
+    if (me.code) {
+      socket.emit('leave_game', {}, done);
+      setTimeout(done, 400); // don't get stuck if the ack never arrives
+    } else {
+      done();
+    }
+  }
+  document.querySelectorAll('[data-exit]').forEach((b) => { b.onclick = exitToHome; });
 
   // ---------- helpers ----------
   const $ = (id) => document.getElementById(id);
@@ -641,7 +681,8 @@
     answeredThisRound = false;
     currentGuess = '';
     currentUnit = data.unit;
-    waitingText = '';
+    currentImageUrl = data.image || null;
+    $('waiting-line').textContent = '';
     renderGuess();
     $('round-label').textContent = `Round ${data.round} of ${data.totalRounds}`;
     $('cat-chip').textContent = data.category;
@@ -650,6 +691,7 @@
     $('answered-note').textContent = '';
     $('answer-count').textContent = '';
     setKeypadEnabled(true);
+    updateKeypadOrImage();
     startTimer(data.endsAt, data.seconds);
     // Resumed mid-round after already locking in: restore the locked state
     if (data.lockedValue !== null && data.lockedValue !== undefined) {
@@ -658,9 +700,33 @@
       renderGuess();
       setKeypadEnabled(false);
       $('answered-note').textContent = `Locked in: ${fmt(data.lockedValue, currentUnit)} ✔`;
+      updateKeypadOrImage();
     }
     show('screen-question');
   });
+
+  // Once a player locks in an answer, the keypad is no longer needed — swap it
+  // for a picture related to the question (when we have one) while they wait.
+  function updateKeypadOrImage() {
+    const box = $('q-image');
+    if (!answeredThisRound) {
+      $('keypad').style.display = '';
+      box.style.display = 'none';
+      return;
+    }
+    $('keypad').style.display = 'none';
+    box.style.display = 'flex';
+    if (currentImageUrl) {
+      box.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = currentImageUrl;
+      img.alt = '';
+      img.onerror = () => { box.innerHTML = `<div class="no-img">${CATEGORY_EMOJI[$('cat-chip').textContent] || '🤔'}</div>`; };
+      box.appendChild(img);
+    } else {
+      box.innerHTML = `<div class="no-img">${CATEGORY_EMOJI[$('cat-chip').textContent] || '🤔'}</div>`;
+    }
+  }
 
   function startTimer(endsAt, totalSeconds) {
     clearInterval(timerInterval);
@@ -699,12 +765,10 @@
     }, 250);
   }
 
-  // Status shown inside the guess box while it's empty (who we're waiting for, etc.)
-  let waitingText = '';
   function renderGuess() {
     sendDraft();
     const d = $('guess-display');
-    if (!currentGuess) { d.innerHTML = `<span class="placeholder">${escapeHtml(waitingText)}</span>`; return; }
+    if (!currentGuess) { d.innerHTML = '<span class="placeholder"></span>'; return; }
     const num = Number(currentGuess);
     if (isYearUnit(currentUnit) || currentGuess.endsWith('.') || !isFinite(num)) d.textContent = currentGuess;
     else d.textContent = num.toLocaleString('en-US', { maximumFractionDigits: 10 });
@@ -743,8 +807,8 @@
     // Optimistic: lock the UI instantly, reconcile with the server in the background
     answeredThisRound = true;
     setKeypadEnabled(false);
+    updateKeypadOrImage();
     $('answered-note').textContent = `Locked in: ${fmt(value, currentUnit)} ✔`;
-    $('answer-count').textContent = waitingText;
     socket.emit('submit_answer', { value }, (res) => {
       if (!res || !res.ok) {
         $('answered-note').textContent = (res && res.error) || 'Could not submit.';
@@ -754,12 +818,11 @@
 
   socket.on('answer_count', ({ answered, total, waitingFor }) => {
     const w = (waitingFor || []).map((n) => (n === me.nick ? 'you' : n));
-    if (!w.length) waitingText = 'Everyone answered ✔';
-    else if (w.length <= 3) waitingText = `⏳ Waiting for: ${w.join(', ')}`;
-    else waitingText = `⏳ Waiting for ${w.length} players`;
-    // shown in the guess box while empty; once you've typed, it goes under the keypad
-    $('answer-count').textContent = currentGuess || answeredThisRound ? waitingText : '';
-    if (!currentGuess) renderGuess();
+    let text;
+    if (!w.length) text = 'Everyone answered ✔';
+    else if (w.length <= 3) text = `⏳ Waiting for: ${w.join(', ')}`;
+    else text = `⏳ Waiting for ${w.length} players`;
+    $('waiting-line').textContent = text; // always visible, just above the timer
   });
 
   // ---------- results ----------
@@ -952,8 +1015,6 @@
     socket.emit('play_again', {}, () => {});
     // new_game_lobby switches the screen; button resets on next final render
   };
-  $('btn-leave').onclick = () => { rememberGame(null); location.href = location.pathname; };
-
   socket.on('new_game_lobby', (lobby) => {
     renderLobby(lobby);
     show('screen-lobby');

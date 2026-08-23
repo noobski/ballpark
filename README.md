@@ -21,6 +21,11 @@ Closest guess wins the round. At the end of each round you also see whether the
 5. **Finish** — after round 10: podium + final standings, and the host can start a
    new game with the same group (fresh questions — no repeats from the last game).
 
+Once you lock in a guess, the keypad is replaced by a picture related to the
+question (the person, place, landmark, etc. — fetched from Wikipedia) while you
+wait for everyone else. Every screen has an **Exit** button that takes you
+straight back to the home screen and frees your seat immediately.
+
 ## Run locally
 
 ```bash
@@ -53,10 +58,12 @@ host works. It respects the `PORT` environment variable.
 
 ```
 server.js          # game logic: rooms, rounds, timers, scoring, crowd stats
+images.js          # Wikipedia image lookup for questions, with disk cache
 questions.js       # question bank (~3,000 questions, 16 categories) + picker
 public/index.html  # entire client (single file: lobby, keypad, results, podium)
 test/simulate.js   # 3-player full-game simulation (2 games incl. play-again)
-test/timeout-test.js  # timer-expiry edge case
+test/timeout-test.js       # timer-expiry edge case
+test/leave-and-image.js    # exit/leave-game behavior + round_start image field
 ```
 
 ## Tuning
