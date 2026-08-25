@@ -7,12 +7,16 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { pickQuestions } = require('./questions');
 const { getImage, prewarm } = require('./images');
+const { recordGamePlayed, recordPlayer, getStats } = require('./stats');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Lifetime usage counter shown on the home screen
+app.get('/api/stats', (req, res) => res.json(getStats()));
 
 const PORT = process.env.PORT || 3000;
 const ROUNDS_PER_GAME = 10;
@@ -426,6 +430,7 @@ io.on('connection', (socket) => {
   socket.on('create_game', ({ nick, key }, cb) => {
     const game = createGame();
     const playerId = playerIdFor(key);
+    recordPlayer(playerId);
     const player = { id: playerId, nick: sanitizeNick(nick), score: 0, connected: true, socketId: socket.id };
     game.players.set(playerId, player);
     game.hostId = playerId;
@@ -441,6 +446,7 @@ io.on('connection', (socket) => {
     if (!game) return cb && cb({ ok: false, error: 'Game not found. Check the code!' });
     const cleanNick = sanitizeNick(nick);
     const playerId = playerIdFor(key);
+    recordPlayer(playerId);
 
     // ---- Reconnect / resume: same device key, OR same nickname whose seat is currently empty ----
     const existing = game.players.get(playerId)
@@ -488,6 +494,7 @@ io.on('connection', (socket) => {
     game.questions = pickQuestions(ROUNDS_PER_GAME, new Set([...askedGlobal, ...game.usedQuestionTexts]));
     markAsked(game.questions);
     prewarm(game.questions.map((q) => q.subject)); // start fetching all 10 images now
+    recordGamePlayed();
     cb && cb({ ok: true });
     io.to(game.code).emit('game_started', {});
     startRound(game);

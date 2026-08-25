@@ -1,4 +1,5 @@
 node_modules/
 asked.json
 image-cache.json
+stats.json
 nohup.out

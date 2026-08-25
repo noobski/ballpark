@@ -214,6 +214,8 @@
   #final-table .avg-row td { font-size: 1rem; }
 
   .footer-note { text-align: center; color: var(--muted); font-size: .8rem; padding: 12px; }
+  .stats-note { text-align: center; color: var(--muted); font-size: .78rem; padding: 0 12px 8px; opacity: .85; }
+  .stats-note b { color: var(--text); }
 
   /* persistent "who am I" chip */
   .me-chip {
@@ -265,6 +267,7 @@
   <div class="error" id="home-error"></div>
   <div class="spacer"></div>
   <div class="footer-note">Grab friends, share a code, and find out if the crowd is smarter than the smartest player.</div>
+  <div class="stats-note" id="stats-note"></div>
 </div>
 
 <!-- NICKNAME -->
@@ -409,6 +412,15 @@
   let currentFact = null;
   let timerInterval = null;
   let answeredThisRound = false;
+
+  // Lifetime usage counter on the home screen — best-effort, fails silently
+  // (e.g. offline) since it's a nice-to-have, not core to playing the game.
+  fetch('/api/stats').then((r) => r.json()).then((s) => {
+    const el = $('stats-note');
+    if (!el || !s) return;
+    const since = s.since ? new Date(s.since + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '';
+    el.innerHTML = `🎮 <b>${(s.gamesPlayed || 0).toLocaleString()}</b> games played by <b>${(s.uniquePlayers || 0).toLocaleString()}</b> players${since ? ` &nbsp;·&nbsp; Since ${since}` : ''}`;
+  }).catch(() => {});
 
   const CATEGORY_EMOJI = {
     'Geography': '🌍', 'People': '🧑', 'History': '📜', 'Science & Nature': '🔬',
