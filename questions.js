@@ -347,6 +347,21 @@ const STATIC = [
   { cat: 'Animals', q: 'What is the wingspan of a wandering albatross (in cm)?', a: 310, unit: 'cm' },
   { cat: 'Animals', q: 'How many times better is a dog\'s sense of smell than a human\'s (approximately)?', a: 40000, unit: 'times' },
   { cat: 'Animals', q: 'How many meters per minute does a sloth move on the ground?', a: 4, unit: 'meters/minute' },
+  { cat: 'Animals', q: 'How many hearts does an earthworm have?', a: 5, unit: 'hearts' },
+  { cat: 'Animals', q: 'How many stomachs does a cow have?', a: 4, unit: 'stomachs' },
+  { cat: 'Animals', q: 'How many eyes does a bee have?', a: 5, unit: 'eyes' },
+  { cat: 'Animals', q: 'What percentage of their life do sloths spend sleeping?', a: 70, unit: '%' },
+  { cat: 'Animals', q: 'How long can a camel go without drinking water (in days)?', a: 14, unit: 'days' },
+  { cat: 'Animals', q: 'How high can a kangaroo jump vertically (in meters)?', a: 1.8, unit: 'meters', subject: 'a kangaroo (red)' },
+  { cat: 'Animals', q: 'How many gallons of blood does a blue whale\'s heart pump per beat (in liters)?', a: 220, unit: 'liters' },
+  { cat: 'Animals', q: 'How fast can a sailfish swim (in km/h), the fastest fish in the ocean?', a: 110, unit: 'km/h' },
+  { cat: 'Animals', q: 'How many eggs can a queen bee lay in a single day?', a: 2000, unit: 'eggs' },
+  { cat: 'Animals', q: 'How many species of jellyfish are there (approximately)?', a: 2000, unit: 'species' },
+  { cat: 'Animals', q: 'What percentage of animal species on Earth are insects (approximately)?', a: 80, unit: '%' },
+  { cat: 'Animals', q: 'How many muscles does an elephant\'s trunk have (approximately)?', a: 40000, unit: 'muscles' },
+  { cat: 'Animals', q: 'How long is a giraffe\'s tongue (in cm)?', a: 50, unit: 'cm', subject: 'a giraffe' },
+  { cat: 'Animals', q: 'How many hours a day does a giant panda spend eating bamboo?', a: 12, unit: 'hours', subject: 'a panda (giant)' },
+  { cat: 'Animals', q: 'How fast can a mantis shrimp punch (in km/h)?', a: 80, unit: 'km/h' },
 
   // ============ SPORTS ============
   { cat: 'Sports', q: 'What is the men\'s world record for the 100m sprint (in seconds)?', a: 9.58, unit: 'seconds' },
@@ -690,6 +705,7 @@ function buildQuestions() {
   for (const [f, c] of N.CALORIES) qs.push({ cat: 'Food & Drink', q: `How many calories are in ${f}?`, a: c, unit: 'calories', subject: f });
   for (const [c, k] of N.EMPLOYEES) qs.push({ cat: 'Business & Tech', q: `How many employees does ${c} have?`, a: Math.round(k * 1000), unit: 'employees', subject: c });
   for (const [q, a] of N.CHAMPIONSHIPS) qs.push({ cat: 'Sports', q, a, unit: 'count' });
+  for (const [target, buyer, price] of N.ACQUISITIONS) qs.push({ cat: 'Business & Tech', q: `How much did ${buyer} pay to acquire ${target} (in billion $)?`, a: price, unit: 'billion $', subject: target });
 
   qs.push(...STATIC, ...STATIC_EXTRA);
 
@@ -809,9 +825,9 @@ function resolveQuestion(entry) {
   return { cat: entry.cat, q: entry.q, a: entry.a, unit: entry.unit, subject, isPerson, fact };
 }
 
-// Pick n questions purely at random (capped at 2 per category so one game
-// doesn't drown in Geography), avoiding a given set of used question texts
-// (so consecutive games with the same group don't repeat).
+// Pick n questions purely at random (capped per category so one game doesn't
+// drown in any one theme), avoiding a given set of used question texts (so
+// consecutive games with the same group don't repeat).
 function pickQuestions(n, usedTexts = new Set()) {
   const shuffle = (arr) => {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -824,11 +840,22 @@ function pickQuestions(n, usedTexts = new Set()) {
   const picked = [];
   const perCat = {};
   const MAX_PER_CAT = 2;
+  // Animals, Science/Nature & Business/Tech get an extra slot — frequently-requested favorites.
+  const CATEGORY_CAP_OVERRIDES = { Animals: 3, 'Science & Nature': 3, 'Business & Tech': 3 };
+  // "How old is X?" questions draw from a huge people bank (musicians, athletes,
+  // world leaders, authors, ...) that any one group only recognizes a slice of —
+  // capping at 1 per game (down from up to 2 via the People category cap alone)
+  // keeps the odds of hitting someone nobody's heard of much lower.
+  const MAX_AGE_QUESTIONS = 1;
+  let ageCount = 0;
   for (const q of avail) {
     if (picked.length === n) break;
-    if ((perCat[q.cat] || 0) >= MAX_PER_CAT) continue;
+    const catCap = CATEGORY_CAP_OVERRIDES[q.cat] || MAX_PER_CAT;
+    if ((perCat[q.cat] || 0) >= catCap) continue;
+    if (q.birth && ageCount >= MAX_AGE_QUESTIONS) continue;
     picked.push(q);
     perCat[q.cat] = (perCat[q.cat] || 0) + 1;
+    if (q.birth) ageCount++;
   }
   // Fill remainder ignoring the category cap (tiny banks / near-exhaustion)
   for (const q of avail) {
